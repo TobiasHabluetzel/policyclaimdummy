@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { COUNTRIES } from './countries'
 
 // ----- Types ---------------------------------------------------------------
 
@@ -264,6 +265,19 @@ function AddPolicyDialog({ onClose, onCreated }: { onClose: () => void; onCreate
 
   const showExtras = type !== 'Individual'
 
+  // Annual policies always run start + 1 year - 1 day. Keep periodEnd in
+  // sync with periodStart automatically and hide the input.
+  useEffect(() => {
+    if (duration === 'Annual' && periodStart) {
+      const [y, m, d] = periodStart.split('-').map(Number)
+      const start = new Date(Date.UTC(y, m - 1, d))
+      const end = new Date(start)
+      end.setUTCFullYear(end.getUTCFullYear() + 1)
+      end.setUTCDate(end.getUTCDate() - 1)
+      setPeriodEnd(end.toISOString().slice(0, 10))
+    }
+  }, [duration, periodStart])
+
   function addExtra() { setExtras(prev => [...prev, emptyInsured()]) }
   function removeExtra(i: number) { setExtras(prev => prev.filter((_, j) => j !== i)) }
   function patchExtra(i: number, patch: Partial<InsuredInput>) {
@@ -330,11 +344,17 @@ function AddPolicyDialog({ onClose, onCreated }: { onClose: () => void; onCreate
             <Field label="Period start">
               <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="border border-pa-line px-2 py-1 text-sm w-full" />
             </Field>
-            <Field label="Period end">
-              <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="border border-pa-line px-2 py-1 text-sm w-full" />
-            </Field>
+            {duration === 'Annual' ? (
+              <Field label="Period end (auto)">
+                <input type="date" value={periodEnd} disabled className="border border-pa-line px-2 py-1 text-sm w-full bg-pa-panel text-gray-500" />
+              </Field>
+            ) : (
+              <Field label="Period end">
+                <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="border border-pa-line px-2 py-1 text-sm w-full" />
+              </Field>
+            )}
             <Field label="Destination">
-              <input value={destination} onChange={e => setDestination(e.target.value)} className="border border-pa-line px-2 py-1 text-sm w-full" />
+              <CountryCombobox value={destination} onChange={setDestination} />
             </Field>
           </div>
 
@@ -412,6 +432,41 @@ function Select({
     >
       {options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
     </select>
+  )
+}
+
+function CountryCombobox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const matches = useMemo(() => {
+    const q = value.trim().toLowerCase()
+    if (!q) return COUNTRIES.slice(0, 10)
+    return COUNTRIES.filter(c => c.toLowerCase().includes(q)).slice(0, 12)
+  }, [value])
+  return (
+    <div className="relative">
+      <input
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="start typing a country…"
+        className="border border-pa-line px-2 py-1 text-sm w-full"
+      />
+      {open && matches.length > 0 && (
+        <div className="absolute z-20 left-0 right-0 bg-white border border-pa-line max-h-56 overflow-y-auto">
+          {matches.map(c => (
+            <button
+              type="button"
+              key={c}
+              onMouseDown={() => { onChange(c); setOpen(false) }}
+              className="block w-full text-left px-3 py-1.5 text-xs hover:bg-pa-panel border-b border-pa-line"
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
