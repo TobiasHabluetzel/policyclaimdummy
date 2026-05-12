@@ -14,12 +14,14 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
-// Policy Admin owns the schema — apply on startup.
+// Policy Admin owns the schema — apply on startup and seed sample data on
+// first boot so a fresh DB isn't empty.
 if (!string.IsNullOrEmpty(connectionString))
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.EnsureCreatedAsync();
+    await Seeder.SeedAsync(db);
 }
 
 app.MapGet("/healthz", () => Results.Ok("healthy"));
