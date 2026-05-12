@@ -1,0 +1,23 @@
+# Stage 1 — build the Policy Admin SPA
+FROM node:20-alpine AS web
+WORKDIR /app
+COPY src/PolicyAdmin.Web/package*.json ./
+RUN npm ci
+COPY src/PolicyAdmin.Web/ ./
+RUN npx vite build --outDir /web-dist --emptyOutDir
+
+# Stage 2 — build the .NET API and bundle the SPA into wwwroot
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS api
+WORKDIR /src
+COPY src/Shared/ ./Shared/
+COPY src/PolicyAdmin.Api/ ./PolicyAdmin.Api/
+RUN dotnet restore PolicyAdmin.Api/PolicyAdmin.Api.csproj
+COPY --from=web /web-dist ./PolicyAdmin.Api/wwwroot/
+RUN dotnet publish PolicyAdmin.Api/PolicyAdmin.Api.csproj -c Release -o /publish
+
+# Stage 3 — runtime
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=api /publish .
+EXPOSE 8080
+CMD ["sh", "-c", "ASPNETCORE_HTTP_PORTS=${PORT:-8080} dotnet PolicyAdmin.Api.dll"]

@@ -1,16 +1,27 @@
 # policyclaimdummy
 
-Demo back-end with two distinct "legacy system" front-ends, used as a stand-in for an insurer's NIS (policy admin) and back-office claims operations system. Pairs with the claims-app and portal repos.
+Two independent demo systems used as stand-ins for an insurer's policy administration platform and back-office claims operations console. Pairs with the claims-app + portal repos for end-to-end demos.
 
 ## Layout
 
-- `src/SystemsDemo.Api/` — single ASP.NET 8 service. Exposes:
-  - **GraphQL** at `/graphql` — implements the NIS operations the claims-app calls (search by email / number, situation, dashboard, coverages). Drop-in for a real NIS endpoint via env var.
-  - **REST** under `/api/` — internal endpoints powering both demo front-ends (add / list / cancel policy, claim inbox + status pipeline, AC hand-off webhook receiver).
-  - **Static SPAs** under `/nis/` (FakeNIS) and `/ops/` (FakeClaimsOps).
-- `src/FakeNis.Web/` — dated-corporate React + Vite app for policy admin.
-- `src/FakeClaimsOps.Web/` — newer-corporate React + Vite app for the claims operations console.
+```
+src/
+├── Shared/                  # Common entities + DbContext (referenced by both APIs)
+├── PolicyAdmin.Api/         # ASP.NET 8 — REST + serves the Policy Admin SPA
+├── PolicyAdmin.Web/         # React + Vite (dated-corporate skin)
+├── ClaimsOps.Api/           # ASP.NET 8 — REST + serves the Claims Ops SPA
+└── ClaimsOps.Web/           # React + Vite (newer-corporate skin)
+```
 
-## Deployment
+## Deployment — two Railway services from one repo
 
-Single Docker image, single Railway service. The Dockerfile builds both SPAs and bundles them into the API's `wwwroot/{nis,ops}`. Postgres attaches via `ConnectionStrings__DefaultConnection` (Railway URI accepted).
+Two Dockerfiles, two Railway services pointing at the same GitHub repo but different Dockerfile paths:
+
+| Railway service | Dockerfile | Suggested URL |
+|---|---|---|
+| `policyadmin` | `Dockerfile.policyadmin` | `policyadmin-production.up.railway.app` |
+| `claimsops`   | `Dockerfile.claimsops`   | `claimsops-production.up.railway.app` |
+
+Both connect to **one shared Postgres** in the same Railway project. Set `ConnectionStrings__DefaultConnection` on each service (same value, the postgresql:// URI works — the API normalises it).
+
+`PolicyAdmin.Api` owns the schema and runs `EnsureCreatedAsync` on startup; `ClaimsOps.Api` just connects.

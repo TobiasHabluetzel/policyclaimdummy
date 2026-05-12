@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace SystemsDemo.Api.Data;
+namespace Demo.Shared;
 
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
-    // Entities land in the next commit (Policy, Claim, etc.).
+    // Entities (Policy, Claim, etc.) land in the next commit.
 }

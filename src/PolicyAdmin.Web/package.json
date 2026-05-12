@@ -1,5 +1,5 @@
 {
-  "name": "fakeclaimsops-web",
+  "name": "policy-admin-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",

@@ -3,18 +3,16 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
-      // Dated-corporate palette: heavy navy + steel grey, no rounded radius.
+      // Dated corporate palette — heavy navy + steel grey, no rounded radius.
       colors: {
-        nis: {
+        pa: {
           navy: '#1F3A60',
           steel: '#3D5A80',
           line: '#C9D1DA',
           panel: '#EEF1F5',
         },
       },
-      fontFamily: {
-        sans: ['Arial', 'Helvetica', 'sans-serif'],
-      },
+      fontFamily: { sans: ['Arial', 'Helvetica', 'sans-serif'] },
     },
   },
   plugins: [],
