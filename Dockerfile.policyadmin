@@ -2,7 +2,7 @@
 FROM node:20-alpine AS web
 WORKDIR /app
 COPY src/PolicyAdmin.Web/package*.json ./
-RUN npm ci
+RUN npm install --no-audit --no-fund
 COPY src/PolicyAdmin.Web/ ./
 RUN npx vite build --outDir /web-dist --emptyOutDir
 

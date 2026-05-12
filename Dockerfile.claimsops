@@ -2,7 +2,7 @@
 FROM node:20-alpine AS web
 WORKDIR /app
 COPY src/ClaimsOps.Web/package*.json ./
-RUN npm ci
+RUN npm install --no-audit --no-fund
 COPY src/ClaimsOps.Web/ ./
 RUN npx vite build --outDir /web-dist --emptyOutDir
 
