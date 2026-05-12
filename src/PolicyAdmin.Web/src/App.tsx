@@ -371,7 +371,10 @@ function AddPolicyDialog({ onClose, onCreated }: { onClose: () => void; onCreate
               Holder
             </div>
             <div className="border border-t-0 border-pa-line p-3">
-              <InsuredEditor value={holder} onChange={setHolder} />
+              <InsuredEditor
+                value={holder}
+                onChange={patch => setHolder(prev => ({ ...prev, ...patch }))}
+              />
             </div>
           </section>
 
