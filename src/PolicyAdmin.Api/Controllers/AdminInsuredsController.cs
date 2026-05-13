@@ -65,7 +65,10 @@ public class AdminInsuredsController(AppDbContext db) : ControllerBase
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var i = await db.Insureds.AsNoTracking()
-            .Include(x => x.PolicyLinks).ThenInclude(l => l.Policy)
+            .Include(x => x.PolicyLinks)
+                .ThenInclude(l => l.Policy)
+                    .ThenInclude(p => p!.InsuredLinks)
+                        .ThenInclude(il => il.Insured)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (i is null) return NotFound();
         return Ok(new
@@ -89,8 +92,17 @@ public class AdminInsuredsController(AppDbContext db) : ControllerBase
                     duration = l.Policy.Duration.ToString(),
                     periodStart = l.Policy.PeriodStart.ToString("yyyy-MM-dd"),
                     periodEnd = l.Policy.PeriodEnd.ToString("yyyy-MM-dd"),
+                    destination = l.Policy.Destination,
                     status = PolicyHelpers.DeriveStatus(l.Policy, today).ToString(),
                     isHolder = l.IsHolder,
+                    insureds = l.Policy.InsuredLinks
+                        .OrderByDescending(il => il.IsHolder)
+                        .Select(il => new
+                        {
+                            firstName = il.Insured!.FirstName,
+                            lastName = il.Insured.LastName,
+                            isHolder = il.IsHolder,
+                        }),
                 }),
         });
     }
