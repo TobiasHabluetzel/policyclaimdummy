@@ -24,6 +24,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.LastName).HasMaxLength(100);
             e.Property(x => x.Email).HasMaxLength(200);
             e.Property(x => x.PhoneNumber).HasMaxLength(50);
+            e.Property(x => x.IdentityNumber).HasMaxLength(64);
         });
 
         mb.Entity<Policy>(e =>

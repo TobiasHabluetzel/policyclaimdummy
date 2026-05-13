@@ -9,6 +9,8 @@ public class Insured
     /// <summary>Required and unique. Email is the lookup key for an Insured.</summary>
     public string Email { get; set; } = "";
     public string? PhoneNumber { get; set; }
+    /// <summary>Optional passport or national ID number.</summary>
+    public string? IdentityNumber { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public List<PolicyInsured> PolicyLinks { get; set; } = new();
 }

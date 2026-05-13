@@ -9,7 +9,8 @@ namespace Demo.PolicyAdmin.Controllers;
 public class AdminPoliciesController(AppDbContext db) : ControllerBase
 {
     public record AddInsuredInput(
-        Guid? Id, string FirstName, string LastName, DateOnly DateOfBirth, string Email, string? PhoneNumber);
+        Guid? Id, string FirstName, string LastName, DateOnly DateOfBirth,
+        string Email, string? PhoneNumber, string? IdentityNumber);
 
     public record AddPolicyInput(
         CoverageTier Tier,
@@ -115,6 +116,7 @@ public class AdminPoliciesController(AppDbContext db) : ControllerBase
                     dateOfBirth = l.Insured.DateOfBirth.ToString("yyyy-MM-dd"),
                     email = l.Insured.Email,
                     phoneNumber = l.Insured.PhoneNumber,
+                    identityNumber = l.Insured.IdentityNumber,
                     isHolder = l.IsHolder,
                 }),
             coverages,
@@ -217,6 +219,7 @@ public class AdminPoliciesController(AppDbContext db) : ControllerBase
                 DateOfBirth = input.DateOfBirth,
                 Email = email,
                 PhoneNumber = string.IsNullOrWhiteSpace(input.PhoneNumber) ? null : input.PhoneNumber.Trim(),
+                IdentityNumber = string.IsNullOrWhiteSpace(input.IdentityNumber) ? null : input.IdentityNumber.Trim(),
             };
             db.Insureds.Add(created);
             return created;

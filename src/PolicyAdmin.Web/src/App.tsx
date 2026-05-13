@@ -25,6 +25,7 @@ interface InsuredOption {
   dateOfBirth: string
   email: string
   phoneNumber: string | null
+  identityNumber?: string | null
 }
 
 interface InsuredInput {
@@ -34,6 +35,7 @@ interface InsuredInput {
   dateOfBirth: string
   email: string
   phoneNumber: string
+  identityNumber: string
 }
 
 type StatusFilter = 'all' | 'Active' | 'Expired' | 'Cancelled'
@@ -278,7 +280,7 @@ function ConfirmDialog({
 // ----- Add policy dialog -------------------------------------------------
 
 function emptyInsured(): InsuredInput {
-  return { id: null, firstName: '', lastName: '', dateOfBirth: '', email: '', phoneNumber: '' }
+  return { id: null, firstName: '', lastName: '', dateOfBirth: '', email: '', phoneNumber: '', identityNumber: '' }
 }
 
 function insuredValid(i: InsuredInput): boolean {
@@ -539,6 +541,7 @@ function PolicyDetailDialog({
       dateOfBirth: i.dateOfBirth,
       email: i.email,
       phoneNumber: i.phoneNumber ?? '',
+      identityNumber: i.identityNumber ?? '',
     })
     setEdit({
       tier: detail.tier,
@@ -857,95 +860,128 @@ function CountryCombobox({ value, onChange }: { value: string; onChange: (v: str
 }
 
 function InsuredEditor({ value, onChange }: { value: InsuredInput; onChange: (v: Partial<InsuredInput>) => void }) {
-  // Email-first flow. As the user types an email, look it up. If it exists,
-  // link to that person and lock the rest of the fields. If not, expose the
-  // name / DOB / phone fields so the user fills a new record.
-  const [lookupStatus, setLookupStatus] = useState<'idle' | 'checking' | 'found' | 'new'>('idle')
+  // Email-first flow:
+  //   - As the user types, we hit the admin list endpoint for live matches.
+  //   - Clicking a suggestion (or typing an exact email match) links to the
+  //     existing Insured row.
+  //   - When no link is set, name / DOB / phone / identity inputs are locked
+  //     until at least something is typed in the email field — empty email
+  //     means "we don't know who this person is yet".
+  const [suggestions, setSuggestions] = useState<InsuredOption[]>([])
+  const [showSuggest, setShowSuggest] = useState(false)
 
   useEffect(() => {
-    const email = value.email.trim().toLowerCase()
-    // Defer lookup until it at least looks like an email.
-    if (!email || !email.includes('@') || !email.includes('.')) {
-      setLookupStatus('idle')
-      if (value.id) onChange({ id: null })
-      return
-    }
+    const email = value.email.trim()
+    if (email.length < 2) { setSuggestions([]); return }
     let cancelled = false
-    setLookupStatus('checking')
     const t = setTimeout(async () => {
-      const r = await fetch(`/api/admin/insureds/by-email?email=${encodeURIComponent(email)}`)
-      if (cancelled) return
-      if (r.status === 404) {
-        if (value.id) onChange({ id: null })
-        setLookupStatus('new')
-      } else if (r.ok) {
-        const data = await r.json()
-        // Skip if the user already linked this same record (avoid update loops).
-        if (value.id !== data.id) {
-          onChange({
-            id: data.id,
-            firstName: data.firstName,
-            lastName: data.lastName,
-            dateOfBirth: data.dateOfBirth,
-            email: data.email,
-            phoneNumber: data.phoneNumber ?? '',
-          })
-        }
-        setLookupStatus('found')
+      const r = await fetch(`/api/admin/insureds?search=${encodeURIComponent(email)}&take=8`)
+      if (cancelled || !r.ok) return
+      const data = await r.json() as { items: InsuredOption[] }
+      // Auto-link on exact email match (so 'paste the full address' still works).
+      const exact = data.items.find(x => x.email.toLowerCase() === email.toLowerCase())
+      if (exact && value.id !== exact.id) {
+        pick(exact)
+        return
       }
-    }, 350)
+      setSuggestions(data.items)
+    }, 250)
     return () => { cancelled = true; clearTimeout(t) }
     // eslint-disable-next-line
   }, [value.email])
 
+  function pick(o: InsuredOption) {
+    onChange({
+      id: o.id,
+      firstName: o.firstName,
+      lastName: o.lastName,
+      dateOfBirth: o.dateOfBirth,
+      email: o.email,
+      phoneNumber: o.phoneNumber ?? '',
+      identityNumber: o.identityNumber ?? '',
+    })
+    setShowSuggest(false)
+    setSuggestions([])
+  }
+
+  function unlink() {
+    onChange({ id: null, firstName: '', lastName: '', dateOfBirth: '', email: '', phoneNumber: '', identityNumber: '' })
+    setSuggestions([])
+  }
+
   const linked = !!value.id
-  const showNewFields = !linked && (lookupStatus === 'new' || lookupStatus === 'idle')
+  const emailHasContent = value.email.trim().length > 0
+  const fieldsDisabled = !emailHasContent
+  const inputClass = `border border-pa-line px-2 py-1 text-sm w-full ${fieldsDisabled ? 'bg-pa-panel text-gray-400' : ''}`
 
   return (
     <div className="space-y-2">
-      <Field label="Email">
-        <input
-          type="email"
-          value={value.email}
-          onChange={e => onChange({ email: e.target.value })}
-          placeholder="person@example.com"
-          className="border border-pa-line px-2 py-1 text-sm w-full"
-        />
-      </Field>
+      <div className="relative">
+        <Field label="Email">
+          <input
+            type="email"
+            value={value.email}
+            onChange={e => {
+              if (linked) onChange({ id: null, email: e.target.value })
+              else onChange({ email: e.target.value })
+              setShowSuggest(true)
+            }}
+            onFocus={() => setShowSuggest(true)}
+            onBlur={() => setTimeout(() => setShowSuggest(false), 150)}
+            placeholder="person@example.com"
+            className="border border-pa-line px-2 py-1 text-sm w-full"
+          />
+        </Field>
+        {!linked && showSuggest && suggestions.length > 0 && (
+          <div className="absolute z-20 left-0 right-0 bg-white border border-pa-line max-h-64 overflow-y-auto shadow-sm">
+            {suggestions.map(s => (
+              <button
+                type="button"
+                key={s.id}
+                onMouseDown={() => pick(s)}
+                className="block w-full text-left px-3 py-1.5 text-xs hover:bg-pa-panel border-b border-pa-line"
+              >
+                <div className="text-gray-800">{s.firstName} {s.lastName} <span className="text-gray-400">· born {s.dateOfBirth}</span></div>
+                <div className="text-gray-500">{s.email}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
-      {lookupStatus === 'checking' && (
-        <div className="text-xs text-gray-400">Looking up…</div>
-      )}
-
-      {linked && lookupStatus === 'found' && (
+      {linked ? (
         <div className="border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs flex items-start justify-between gap-2">
           <div>
             <div className="text-emerald-800 font-semibold">Existing insured — linked</div>
             <div className="text-gray-700 mt-0.5">
               {value.firstName} {value.lastName} · born {value.dateOfBirth}
               {value.phoneNumber ? ` · ${value.phoneNumber}` : ''}
+              {value.identityNumber ? ` · ID ${value.identityNumber}` : ''}
             </div>
           </div>
+          <button type="button" onClick={unlink} className="text-xs text-rose-600 underline shrink-0">Unlink</button>
         </div>
-      )}
-
-      {showNewFields && (
+      ) : (
         <div className="grid grid-cols-2 gap-3">
           <Field label="First name">
-            <input value={value.firstName} onChange={e => onChange({ firstName: e.target.value })}
-              className="border border-pa-line px-2 py-1 text-sm w-full" />
+            <input disabled={fieldsDisabled} value={value.firstName}
+              onChange={e => onChange({ firstName: e.target.value })} className={inputClass} />
           </Field>
           <Field label="Last name">
-            <input value={value.lastName} onChange={e => onChange({ lastName: e.target.value })}
-              className="border border-pa-line px-2 py-1 text-sm w-full" />
+            <input disabled={fieldsDisabled} value={value.lastName}
+              onChange={e => onChange({ lastName: e.target.value })} className={inputClass} />
           </Field>
           <Field label="Date of birth">
-            <input type="date" value={value.dateOfBirth} onChange={e => onChange({ dateOfBirth: e.target.value })}
-              className="border border-pa-line px-2 py-1 text-sm w-full" />
+            <input type="date" disabled={fieldsDisabled} value={value.dateOfBirth}
+              onChange={e => onChange({ dateOfBirth: e.target.value })} className={inputClass} />
           </Field>
           <Field label="Phone (optional)">
-            <input value={value.phoneNumber} onChange={e => onChange({ phoneNumber: e.target.value })}
-              className="border border-pa-line px-2 py-1 text-sm w-full" />
+            <input disabled={fieldsDisabled} value={value.phoneNumber}
+              onChange={e => onChange({ phoneNumber: e.target.value })} className={inputClass} />
+          </Field>
+          <Field label="Passport / ID number (optional)">
+            <input disabled={fieldsDisabled} value={value.identityNumber}
+              onChange={e => onChange({ identityNumber: e.target.value })} className={inputClass} />
           </Field>
         </div>
       )}
@@ -962,6 +998,7 @@ interface InsuredRow {
   dateOfBirth: string
   email: string
   phoneNumber: string | null
+  identityNumber: string | null
   policyCount: number
 }
 
@@ -972,6 +1009,7 @@ interface InsuredDetail {
   dateOfBirth: string
   email: string
   phoneNumber: string | null
+  identityNumber: string | null
   createdAt: string
   policies: Array<{
     id: string
@@ -1081,6 +1119,7 @@ function InsuredDetailDialog({ id, onClose, onUpdated }: { id: string; onClose: 
     dateOfBirth: string
     email: string
     phoneNumber: string
+    identityNumber: string
   } | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1096,6 +1135,7 @@ function InsuredDetailDialog({ id, onClose, onUpdated }: { id: string; onClose: 
       dateOfBirth: data.dateOfBirth,
       email: data.email,
       phoneNumber: data.phoneNumber ?? '',
+      identityNumber: data.identityNumber ?? '',
     })
   }
 
@@ -1119,6 +1159,7 @@ function InsuredDetailDialog({ id, onClose, onUpdated }: { id: string; onClose: 
           dateOfBirth: edit.dateOfBirth,
           email: edit.email.trim(),
           phoneNumber: edit.phoneNumber.trim() || null,
+          identityNumber: edit.identityNumber.trim() || null,
         }),
       })
       if (r.status === 409) {
@@ -1167,6 +1208,10 @@ function InsuredDetailDialog({ id, onClose, onUpdated }: { id: string; onClose: 
               </Field>
               <Field label="Phone (optional)">
                 <input value={edit.phoneNumber} onChange={e => setEdit(p => p ? { ...p, phoneNumber: e.target.value } : p)}
+                  className="border border-pa-line px-2 py-1 text-sm w-full" />
+              </Field>
+              <Field label="Passport / ID number (optional)">
+                <input value={edit.identityNumber} onChange={e => setEdit(p => p ? { ...p, identityNumber: e.target.value } : p)}
                   className="border border-pa-line px-2 py-1 text-sm w-full" />
               </Field>
             </div>

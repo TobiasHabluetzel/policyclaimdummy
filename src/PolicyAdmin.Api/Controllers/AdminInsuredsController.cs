@@ -23,6 +23,7 @@ public class AdminInsuredsController(AppDbContext db) : ControllerBase
             dateOfBirth = i.DateOfBirth.ToString("yyyy-MM-dd"),
             email = i.Email,
             phoneNumber = i.PhoneNumber,
+            identityNumber = i.IdentityNumber,
         });
     }
 
@@ -51,6 +52,7 @@ public class AdminInsuredsController(AppDbContext db) : ControllerBase
                 dateOfBirth = i.DateOfBirth.ToString("yyyy-MM-dd"),
                 email = i.Email,
                 phoneNumber = i.PhoneNumber,
+                identityNumber = i.IdentityNumber,
                 policyCount = i.PolicyLinks.Count,
             })
             .ToListAsync(ct);
@@ -74,6 +76,7 @@ public class AdminInsuredsController(AppDbContext db) : ControllerBase
             dateOfBirth = i.DateOfBirth.ToString("yyyy-MM-dd"),
             email = i.Email,
             phoneNumber = i.PhoneNumber,
+            identityNumber = i.IdentityNumber,
             createdAt = i.CreatedAt,
             policies = i.PolicyLinks
                 .OrderByDescending(l => l.Policy!.CreatedAt)
@@ -93,7 +96,8 @@ public class AdminInsuredsController(AppDbContext db) : ControllerBase
     }
 
     public record UpdateInsuredInput(
-        string FirstName, string LastName, DateOnly DateOfBirth, string Email, string? PhoneNumber);
+        string FirstName, string LastName, DateOnly DateOfBirth,
+        string Email, string? PhoneNumber, string? IdentityNumber);
 
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<object>> Update(Guid id, [FromBody] UpdateInsuredInput body, CancellationToken ct)
@@ -117,6 +121,7 @@ public class AdminInsuredsController(AppDbContext db) : ControllerBase
         insured.DateOfBirth = body.DateOfBirth;
         insured.Email = email;
         insured.PhoneNumber = string.IsNullOrWhiteSpace(body.PhoneNumber) ? null : body.PhoneNumber.Trim();
+        insured.IdentityNumber = string.IsNullOrWhiteSpace(body.IdentityNumber) ? null : body.IdentityNumber.Trim();
         await db.SaveChangesAsync(ct);
         return Ok(new { id = insured.Id });
     }
