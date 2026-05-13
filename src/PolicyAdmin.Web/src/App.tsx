@@ -47,6 +47,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<PolicyRow | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -158,7 +159,11 @@ export default function App() {
                   <tr><td colSpan={10} className="p-4 text-center text-gray-400">No policies match.</td></tr>
                 )}
                 {!loading && policies.map(p => (
-                  <tr key={p.id} className="border-b border-pa-line hover:bg-pa-panel/60">
+                  <tr
+                    key={p.id}
+                    onClick={() => setDetailId(p.id)}
+                    className="border-b border-pa-line hover:bg-pa-panel/60 cursor-pointer"
+                  >
                     <Td className="font-mono">{p.displayNumber}</Td>
                     <Td>
                       <div className="text-gray-800">{p.holderName}</div>
@@ -171,7 +176,7 @@ export default function App() {
                     <Td>{p.destination}</Td>
                     <Td className="text-center">{p.insuredCount}</Td>
                     <Td><StatusBadge status={p.status} /></Td>
-                    <Td className="text-right">
+                    <Td className="text-right" onClick={e => e.stopPropagation()}>
                       {p.status === 'Cancelled'
                         ? <span className="text-gray-300 text-xs">—</span>
                         : <button
@@ -192,6 +197,13 @@ export default function App() {
       </footer>
 
       {showAdd && <AddPolicyDialog onClose={() => setShowAdd(false)} onCreated={() => { setShowAdd(false); load() }} />}
+      {detailId && (
+        <PolicyDetailDialog
+          id={detailId}
+          onClose={() => setDetailId(null)}
+          onUpdated={() => load()}
+        />
+      )}
       {cancelTarget && (
         <ConfirmDialog
           title="Cancel policy"
@@ -435,6 +447,338 @@ function Select({
     >
       {options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
     </select>
+  )
+}
+
+// ----- Policy detail (view + edit) ----------------------------------------
+
+interface PolicyDetail {
+  id: string
+  displayNumber: string
+  tier: 'Bronze' | 'Silver' | 'Gold'
+  tierName: string
+  duration: 'SingleTrip' | 'Annual'
+  type: 'Individual' | 'Family' | 'Business'
+  periodStart: string
+  periodEnd: string
+  destination: string
+  currencyCode: string
+  cancelledAt: string | null
+  status: 'Active' | 'Expired' | 'Cancelled'
+  insureds: Array<InsuredOption & { isHolder: boolean }>
+  coverages: Array<{ code: string; name: string; description: string; coverSum: number; deductibleSum: number | null }>
+}
+
+function PolicyDetailDialog({
+  id, onClose, onUpdated,
+}: { id: string; onClose: () => void; onUpdated: () => void }) {
+  const [detail, setDetail] = useState<PolicyDetail | null>(null)
+  const [editMode, setEditMode] = useState(false)
+  const [edit, setEdit] = useState<{
+    tier: 'Bronze' | 'Silver' | 'Gold'
+    duration: 'SingleTrip' | 'Annual'
+    type: 'Individual' | 'Family' | 'Business'
+    periodStart: string
+    periodEnd: string
+    destination: string
+    currencyCode: string
+    holder: InsuredInput
+    extras: InsuredInput[]
+  } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function load() {
+    const r = await fetch(`/api/admin/policies/${id}`)
+    const data = await r.json() as PolicyDetail
+    setDetail(data)
+  }
+
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [id])
+
+  function startEdit() {
+    if (!detail) return
+    const holderRow = detail.insureds.find(i => i.isHolder)
+    const otherRows = detail.insureds.filter(i => !i.isHolder)
+    const toInput = (i: InsuredOption): InsuredInput => ({
+      id: i.id,
+      firstName: i.firstName,
+      lastName: i.lastName,
+      dateOfBirth: i.dateOfBirth,
+      email: i.email,
+      phoneNumber: i.phoneNumber ?? '',
+    })
+    setEdit({
+      tier: detail.tier,
+      duration: detail.duration,
+      type: detail.type,
+      periodStart: detail.periodStart,
+      periodEnd: detail.periodEnd,
+      destination: detail.destination,
+      currencyCode: detail.currencyCode,
+      holder: holderRow ? toInput(holderRow) : emptyInsured(),
+      extras: otherRows.map(toInput),
+    })
+    setEditMode(true)
+    setError(null)
+  }
+
+  // Recompute periodEnd for Annual policies in edit mode.
+  useEffect(() => {
+    if (!edit) return
+    if (edit.duration === 'Annual' && edit.periodStart) {
+      const [y, m, d] = edit.periodStart.split('-').map(Number)
+      const start = new Date(Date.UTC(y, m - 1, d))
+      const end = new Date(start)
+      end.setUTCFullYear(end.getUTCFullYear() + 1)
+      end.setUTCDate(end.getUTCDate() - 1)
+      setEdit(prev => prev ? { ...prev, periodEnd: end.toISOString().slice(0, 10) } : prev)
+    }
+  }, [edit?.duration, edit?.periodStart])
+
+  async function save() {
+    if (!edit) return
+    setError(null)
+    if (!edit.holder.firstName || !edit.holder.lastName || !edit.holder.email
+        || !edit.holder.dateOfBirth || !edit.periodStart || !edit.periodEnd || !edit.destination) {
+      setError('Please fill in the required fields.')
+      return
+    }
+    setSaving(true)
+    try {
+      const body = {
+        tier: edit.tier,
+        duration: edit.duration,
+        type: edit.type,
+        periodStart: edit.periodStart,
+        periodEnd: edit.periodEnd,
+        destination: edit.destination,
+        currencyCode: edit.currencyCode,
+        holder: edit.holder,
+        additionalInsureds: edit.type === 'Individual' ? [] : edit.extras,
+      }
+      const r = await fetch(`/api/admin/policies/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) { setError(`Save failed: ${await r.text()}`); return }
+      setEditMode(false)
+      await load()
+      onUpdated()
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white border border-pa-line w-full max-w-4xl">
+        <div className="bg-pa-panel border-b border-pa-line px-3 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-xs uppercase tracking-widest text-pa-navy font-bold">Policy</span>
+            <span className="font-mono text-pa-navy">{detail?.displayNumber ?? '…'}</span>
+            {detail && <StatusBadge status={detail.status} />}
+          </div>
+          <div className="flex items-center gap-2">
+            {!editMode && detail && detail.status !== 'Cancelled' && (
+              <button onClick={startEdit} className="text-xs uppercase tracking-wider px-3 py-1 border border-pa-navy bg-white text-pa-navy hover:bg-pa-panel">
+                Edit
+              </button>
+            )}
+            <button onClick={onClose} className="text-xs uppercase tracking-wider px-3 py-1 border border-pa-line bg-white hover:bg-pa-panel">
+              Close
+            </button>
+          </div>
+        </div>
+
+        {!detail && <div className="p-8 text-center text-gray-400 text-sm">Loading…</div>}
+
+        {detail && !editMode && (
+          <div className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
+            <SectionHeader>Policy</SectionHeader>
+            <div className="grid grid-cols-3 gap-x-6 gap-y-2 border border-t-0 border-pa-line p-3 text-xs">
+              <Detail label="Type">{detail.type}</Detail>
+              <Detail label="Duration">{detail.duration === 'SingleTrip' ? 'Single trip' : 'Annual'}</Detail>
+              <Detail label="Tier">{detail.tier} – {detail.tierName}</Detail>
+              <Detail label="Period">{detail.periodStart} – {detail.periodEnd}</Detail>
+              <Detail label="Destination">{detail.destination}</Detail>
+              <Detail label="Currency">{detail.currencyCode}</Detail>
+              {detail.cancelledAt && <Detail label="Cancelled at">{detail.cancelledAt}</Detail>}
+            </div>
+
+            <SectionHeader>Insured ({detail.insureds.length})</SectionHeader>
+            <div className="border border-t-0 border-pa-line">
+              <table className="w-full text-xs">
+                <thead className="bg-pa-panel text-pa-navy border-b border-pa-line">
+                  <tr>
+                    <Th>Name</Th>
+                    <Th>Date of birth</Th>
+                    <Th>Email</Th>
+                    <Th>Phone</Th>
+                    <Th>Role</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.insureds.map(i => (
+                    <tr key={i.id} className="border-b border-pa-line last:border-b-0">
+                      <Td>{i.firstName} {i.lastName}</Td>
+                      <Td>{i.dateOfBirth}</Td>
+                      <Td>{i.email}</Td>
+                      <Td>{i.phoneNumber ?? '—'}</Td>
+                      <Td>{i.isHolder ? <strong className="text-pa-navy">Holder</strong> : 'Insured'}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <SectionHeader>Coverages ({detail.coverages.length})</SectionHeader>
+            <div className="border border-t-0 border-pa-line max-h-72 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-pa-panel text-pa-navy border-b border-pa-line sticky top-0">
+                  <tr>
+                    <Th className="w-32">Code</Th>
+                    <Th>Name</Th>
+                    <Th className="text-right w-28">Cover sum</Th>
+                    <Th className="text-right w-28">Deductible</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.coverages.map(c => (
+                    <tr key={c.code} className="border-b border-pa-line last:border-b-0">
+                      <Td className="font-mono text-gray-500">{c.code}</Td>
+                      <Td>{c.name}</Td>
+                      <Td className="text-right">{c.coverSum > 0 ? c.coverSum.toLocaleString() : '—'}</Td>
+                      <Td className="text-right">{c.deductibleSum != null ? c.deductibleSum.toLocaleString() : '—'}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {detail && editMode && edit && (
+          <div className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Type">
+                <Select value={edit.type} onChange={v => setEdit(p => p ? { ...p, type: v as any } : p)}
+                  options={[['Individual', 'Individual'], ['Family', 'Family'], ['Business', 'Business']]} />
+              </Field>
+              <Field label="Duration">
+                <Select value={edit.duration} onChange={v => setEdit(p => p ? { ...p, duration: v as any } : p)}
+                  options={[['SingleTrip', 'Single trip'], ['Annual', 'Annual']]} />
+              </Field>
+              <Field label="Tier">
+                <Select value={edit.tier} onChange={v => setEdit(p => p ? { ...p, tier: v as any } : p)}
+                  options={[['Bronze', 'Bronze'], ['Silver', 'Silver'], ['Gold', 'Gold']]} />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Period start">
+                <input type="date" value={edit.periodStart}
+                  onChange={e => setEdit(p => p ? { ...p, periodStart: e.target.value } : p)}
+                  className="border border-pa-line px-2 py-1 text-sm w-full" />
+              </Field>
+              {edit.duration === 'Annual' ? (
+                <Field label="Period end (auto)">
+                  <input type="date" value={edit.periodEnd} disabled className="border border-pa-line px-2 py-1 text-sm w-full bg-pa-panel text-gray-500" />
+                </Field>
+              ) : (
+                <Field label="Period end">
+                  <input type="date" value={edit.periodEnd}
+                    onChange={e => setEdit(p => p ? { ...p, periodEnd: e.target.value } : p)}
+                    className="border border-pa-line px-2 py-1 text-sm w-full" />
+                </Field>
+              )}
+              <Field label="Destination">
+                <CountryCombobox value={edit.destination} onChange={v => setEdit(p => p ? { ...p, destination: v } : p)} />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Currency">
+                <Select value={edit.currencyCode} onChange={v => setEdit(p => p ? { ...p, currencyCode: v } : p)}
+                  options={[['CHF', 'CHF'], ['EUR', 'EUR'], ['USD', 'USD'], ['GBP', 'GBP']]} />
+              </Field>
+            </div>
+
+            <section>
+              <div className="bg-pa-panel border border-pa-line px-3 py-1 text-xs uppercase tracking-widest text-pa-navy font-bold">Holder</div>
+              <div className="border border-t-0 border-pa-line p-3">
+                <InsuredEditor
+                  value={edit.holder}
+                  onChange={patch => setEdit(p => p ? { ...p, holder: { ...p.holder, ...patch } } : p)}
+                />
+              </div>
+            </section>
+
+            {edit.type !== 'Individual' && (
+              <section>
+                <div className="bg-pa-panel border border-pa-line px-3 py-1 text-xs uppercase tracking-widest text-pa-navy font-bold flex items-center justify-between">
+                  <span>Additional insured ({edit.extras.length})</span>
+                  <button type="button"
+                    onClick={() => setEdit(p => p ? { ...p, extras: [...p.extras, emptyInsured()] } : p)}
+                    className="text-xs uppercase tracking-wider text-pa-navy underline">+ Add</button>
+                </div>
+                <div className="border border-t-0 border-pa-line">
+                  {edit.extras.length === 0 && (
+                    <div className="px-3 py-3 text-xs text-gray-400">No additional insured.</div>
+                  )}
+                  {edit.extras.map((e, i) => (
+                    <div key={i} className="px-3 py-3 border-b border-pa-line last:border-b-0">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs uppercase tracking-wider text-gray-500">Insured {i + 1}</p>
+                        <button type="button"
+                          onClick={() => setEdit(p => p ? { ...p, extras: p.extras.filter((_, j) => j !== i) } : p)}
+                          className="text-xs text-rose-600 underline">Remove</button>
+                      </div>
+                      <InsuredEditor
+                        value={e}
+                        onChange={patch => setEdit(p => p ? {
+                          ...p,
+                          extras: p.extras.map((x, j) => j === i ? { ...x, ...patch } : x),
+                        } : p)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {error && <div className="bg-rose-50 border border-rose-300 text-rose-700 text-xs px-3 py-2">{error}</div>}
+
+            <div className="border-t border-pa-line pt-3 flex justify-end gap-2">
+              <button onClick={() => { setEditMode(false); setEdit(null) }}
+                className="text-xs uppercase tracking-wider px-3 py-1 border border-pa-line bg-white hover:bg-pa-panel">
+                Discard
+              </button>
+              <button onClick={save} disabled={saving}
+                className="text-xs uppercase tracking-wider px-3 py-1 border border-pa-navy bg-pa-navy text-white hover:bg-pa-steel disabled:opacity-50">
+                {saving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="bg-pa-panel border border-pa-line px-3 py-1 text-xs uppercase tracking-widest text-pa-navy font-bold">
+      {children}
+    </div>
+  )
+}
+
+function Detail({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-widest text-gray-400">{label}</p>
+      <p className="text-gray-800">{children}</p>
+    </div>
   )
 }
 

@@ -87,11 +87,16 @@ public class AdminPoliciesController(AppDbContext db) : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return NotFound();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var template = await db.CoverageTemplates.AsNoTracking().FirstAsync(t => t.Tier == p.Tier, ct);
+        using var coverageDoc = System.Text.Json.JsonDocument.Parse(template.CoverageJson);
+        var coverages = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+            coverageDoc.RootElement.GetRawText());
         return Ok(new
         {
             id = p.Id,
             displayNumber = p.DisplayNumber,
             tier = p.Tier.ToString(),
+            tierName = template.Name,
             duration = p.Duration.ToString(),
             type = p.Type.ToString(),
             periodStart = p.PeriodStart.ToString("yyyy-MM-dd"),
@@ -112,7 +117,67 @@ public class AdminPoliciesController(AppDbContext db) : ControllerBase
                     phoneNumber = l.Insured.PhoneNumber,
                     isHolder = l.IsHolder,
                 }),
+            coverages,
         });
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<object>> Update(Guid id, [FromBody] AddPolicyInput body, CancellationToken ct)
+    {
+        if (body.Holder is null) return BadRequest("Holder is required.");
+
+        var policy = await db.Policies
+            .Include(p => p.InsuredLinks).ThenInclude(l => l.Insured)
+            .FirstOrDefaultAsync(p => p.Id == id, ct);
+        if (policy is null) return NotFound();
+
+        policy.Tier = body.Tier;
+        policy.Duration = body.Duration;
+        policy.Type = body.Type;
+        policy.PeriodStart = body.PeriodStart;
+        policy.PeriodEnd = body.PeriodEnd;
+        policy.Destination = body.Destination;
+        policy.CurrencyCode = string.IsNullOrWhiteSpace(body.CurrencyCode) ? "CHF" : body.CurrencyCode;
+
+        async Task<Insured> ResolveAsync(AddInsuredInput input)
+        {
+            if (input.Id is Guid gid)
+            {
+                var existing = await db.Insureds.FirstOrDefaultAsync(i => i.Id == gid, ct);
+                if (existing is not null) return existing;
+            }
+            if (!string.IsNullOrWhiteSpace(input.Email))
+            {
+                var byEmail = await db.Insureds.FirstOrDefaultAsync(i => i.Email == input.Email, ct);
+                if (byEmail is not null) return byEmail;
+            }
+            var created = new Insured
+            {
+                FirstName = input.FirstName,
+                LastName = input.LastName,
+                DateOfBirth = input.DateOfBirth,
+                Email = input.Email,
+                PhoneNumber = input.PhoneNumber,
+            };
+            db.Insureds.Add(created);
+            return created;
+        }
+
+        // Reset insured links — easier than diffing for the demo.
+        db.PolicyInsureds.RemoveRange(policy.InsuredLinks);
+        await db.SaveChangesAsync(ct);
+
+        var holder = await ResolveAsync(body.Holder);
+        db.PolicyInsureds.Add(new PolicyInsured { PolicyId = policy.Id, InsuredId = holder.Id, IsHolder = true });
+        foreach (var extra in body.AdditionalInsureds ?? Array.Empty<AddInsuredInput>())
+        {
+            var resolved = await ResolveAsync(extra);
+            if (resolved.Id == holder.Id) continue;
+            db.PolicyInsureds.Add(new PolicyInsured { PolicyId = policy.Id, InsuredId = resolved.Id, IsHolder = false });
+        }
+        await db.SaveChangesAsync(ct);
+
+        return Ok(new { id = policy.Id, displayNumber = policy.DisplayNumber });
     }
 
     [HttpPost("")]
