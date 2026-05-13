@@ -10,6 +10,7 @@ dist/
 
 # Vite
 .vite/
+**/tsconfig.tsbuildinfo
 
 # IDE
 .vscode/

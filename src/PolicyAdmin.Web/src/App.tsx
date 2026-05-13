@@ -316,6 +316,17 @@ function AddPolicyDialog({ onClose, onCreated }: { onClose: () => void; onCreate
     }
   }, [duration, periodStart])
 
+  // Country and region don't overlap — clear destination on duration switch
+  // so an annual doesn't keep a stale country (or vice versa).
+  useEffect(() => {
+    if (duration === 'Annual' && destination && !ANNUAL_REGIONS.includes(destination)) {
+      setDestination('')
+    } else if (duration === 'SingleTrip' && ANNUAL_REGIONS.includes(destination)) {
+      setDestination('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [duration])
+
   function addExtra() { setExtras(prev => [...prev, emptyInsured()]) }
   function removeExtra(i: number) { setExtras(prev => prev.filter((_, j) => j !== i)) }
   function patchExtra(i: number, patch: Partial<InsuredInput>) {
@@ -400,7 +411,7 @@ function AddPolicyDialog({ onClose, onCreated }: { onClose: () => void; onCreate
               </Field>
             )}
             <Field label="Destination">
-              <CountryCombobox value={destination} onChange={setDestination} />
+              <DestinationPicker duration={duration} value={destination} onChange={setDestination} />
             </Field>
           </div>
 
@@ -571,6 +582,18 @@ function PolicyDetailDialog({
     }
   }, [edit?.duration, edit?.periodStart])
 
+  // Clear destination if it no longer fits the new duration's picker.
+  useEffect(() => {
+    if (!edit) return
+    const isRegion = ANNUAL_REGIONS.includes(edit.destination)
+    if (edit.duration === 'Annual' && edit.destination && !isRegion) {
+      setEdit(prev => prev ? { ...prev, destination: '' } : prev)
+    } else if (edit.duration === 'SingleTrip' && isRegion) {
+      setEdit(prev => prev ? { ...prev, destination: '' } : prev)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit?.duration])
+
   async function save() {
     if (!edit) return
     setError(null)
@@ -734,7 +757,11 @@ function PolicyDetailDialog({
                 </Field>
               )}
               <Field label="Destination">
-                <CountryCombobox value={edit.destination} onChange={v => setEdit(p => p ? { ...p, destination: v } : p)} />
+                <DestinationPicker
+                  duration={edit.duration}
+                  value={edit.destination}
+                  onChange={v => setEdit(p => p ? { ...p, destination: v } : p)}
+                />
               </Field>
             </div>
 
@@ -822,6 +849,28 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
       <p className="text-gray-800">{children}</p>
     </div>
   )
+}
+
+// Annual policies are sold by region bucket — a single country doesn't make
+// sense when the policy runs for a year. Keep this list in sync with the
+// seeder.
+const ANNUAL_REGIONS = ['Europe', 'Europe and US', 'Worldwide']
+
+function DestinationPicker({ duration, value, onChange }: {
+  duration: 'SingleTrip' | 'Annual'
+  value: string
+  onChange: (v: string) => void
+}) {
+  if (duration === 'Annual') {
+    return (
+      <Select
+        value={ANNUAL_REGIONS.includes(value) ? value : ''}
+        onChange={onChange}
+        options={[['', '— select region —'], ...ANNUAL_REGIONS.map(r => [r, r] as [string, string])]}
+      />
+    )
+  }
+  return <CountryCombobox value={value} onChange={onChange} />
 }
 
 function CountryCombobox({ value, onChange }: { value: string; onChange: (v: string) => void }) {

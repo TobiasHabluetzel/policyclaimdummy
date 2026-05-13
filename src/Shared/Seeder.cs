@@ -71,9 +71,14 @@ public static class Seeder
         db.Insureds.AddRange(insureds);
         await db.SaveChangesAsync(ct);
 
-        var destinations = new[] {
+        // Single-trip policies have a country; annuals run for a year so a
+        // single country doesn't really fit — they're sold by region bucket.
+        var tripCountries = new[] {
             "Greece","Spain","Italy","France","Thailand","USA","Japan","Mexico",
             "Switzerland","Austria","Portugal","Croatia","Turkey","Egypt","UAE",
+        };
+        var annualRegions = new[] {
+            "Europe","Europe and US","Worldwide",
         };
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -106,7 +111,9 @@ public static class Seeder
                 Type = type,
                 PeriodStart = start,
                 PeriodEnd = end,
-                Destination = destinations[rng.Next(destinations.Length)],
+                Destination = duration == PolicyDuration.SingleTrip
+                    ? tripCountries[rng.Next(tripCountries.Length)]
+                    : annualRegions[rng.Next(annualRegions.Length)],
                 CurrencyCode = "CHF",
                 CancelledAt = rng.NextDouble() < 0.12
                     ? today.AddDays(-rng.Next(0, 200))
