@@ -40,7 +40,54 @@ type StatusFilter = 'all' | 'Active' | 'Expired' | 'Cancelled'
 
 // ----- App ----------------------------------------------------------------
 
+type Tab = 'policies' | 'insureds'
+
 export default function App() {
+  const [tab, setTab] = useState<Tab>('policies')
+  return (
+    <div className="min-h-screen bg-pa-panel font-sans text-gray-800 text-sm">
+      <header className="bg-pa-navy text-white border-b-4 border-pa-steel">
+        <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-widest text-white/70">Policy Administration</p>
+            <h1 className="text-lg font-bold">Underwriting Console</h1>
+          </div>
+          <div className="text-xs text-white/70">v 3.14.2 · session: demo</div>
+        </div>
+      </header>
+
+      <nav className="bg-white border-b border-pa-line">
+        <div className="max-w-7xl mx-auto px-4 flex gap-0 text-xs">
+          <TabLink active={tab === 'policies'} onClick={() => setTab('policies')}>Policies</TabLink>
+          <TabLink active={tab === 'insureds'} onClick={() => setTab('insureds')}>Insured</TabLink>
+          {['Coverages', 'Reports', 'Admin'].map(label => (
+            <span key={label} className="px-4 py-2 border-r border-pa-line text-gray-400">{label}</span>
+          ))}
+        </div>
+      </nav>
+
+      {tab === 'policies' && <PoliciesBody />}
+      {tab === 'insureds' && <InsuredsBody />}
+
+      <footer className="text-center text-xs text-gray-400 py-6">
+        Policy Administration · demo build · © {new Date().getFullYear()}
+      </footer>
+    </div>
+  )
+}
+
+function TabLink({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 border-r border-pa-line ${active ? 'bg-pa-panel font-bold text-pa-navy' : 'text-gray-600 hover:bg-pa-panel'}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function PoliciesBody() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [policies, setPolicies] = useState<PolicyRow[]>([])
@@ -78,31 +125,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-pa-panel font-sans text-gray-800 text-sm">
-      <header className="bg-pa-navy text-white border-b-4 border-pa-steel">
-        <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-widest text-white/70">Policy Administration</p>
-            <h1 className="text-lg font-bold">Underwriting Console</h1>
-          </div>
-          <div className="text-xs text-white/70">v 3.14.2 · session: demo</div>
-        </div>
-      </header>
-
-      <nav className="bg-white border-b border-pa-line">
-        <div className="max-w-7xl mx-auto px-4 flex gap-0 text-xs">
-          {['Policies', 'Insured', 'Coverages', 'Reports', 'Admin'].map((label, i) => (
-            <a
-              key={label}
-              href="#"
-              className={`px-4 py-2 border-r border-pa-line ${i === 0 ? 'bg-pa-panel font-bold text-pa-navy' : 'text-gray-600 hover:bg-pa-panel'}`}
-            >
-              {label}
-            </a>
-          ))}
-        </div>
-      </nav>
-
+    <>
       <main className="max-w-7xl mx-auto px-4 py-4 space-y-3">
         <div className="bg-white border border-pa-line">
           <div className="bg-pa-panel border-b border-pa-line px-3 py-2 text-xs uppercase tracking-widest text-pa-navy font-bold flex items-center justify-between">
@@ -192,10 +215,6 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="text-center text-xs text-gray-400 py-6">
-        Policy Administration · demo build · © {new Date().getFullYear()}
-      </footer>
-
       {showAdd && <AddPolicyDialog onClose={() => setShowAdd(false)} onCreated={() => { setShowAdd(false); load() }} />}
       {detailId && (
         <PolicyDetailDialog
@@ -213,7 +232,7 @@ export default function App() {
           onClose={() => setCancelTarget(null)}
         />
       )}
-    </div>
+    </>
   )
 }
 
@@ -262,6 +281,11 @@ function emptyInsured(): InsuredInput {
   return { id: null, firstName: '', lastName: '', dateOfBirth: '', email: '', phoneNumber: '' }
 }
 
+function insuredValid(i: InsuredInput): boolean {
+  if (i.id) return true
+  return !!(i.email && i.firstName && i.lastName && i.dateOfBirth)
+}
+
 function AddPolicyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [tier, setTier] = useState<'Bronze' | 'Silver' | 'Gold'>('Silver')
   const [duration, setDuration] = useState<'SingleTrip' | 'Annual'>('SingleTrip')
@@ -299,8 +323,16 @@ function AddPolicyDialog({ onClose, onCreated }: { onClose: () => void; onCreate
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-    if (!holder.firstName || !holder.lastName || !holder.email || !holder.dateOfBirth || !periodStart || !periodEnd || !destination) {
-      setError('Please fill in the required fields (holder name + DOB + email, period and destination).')
+    if (!periodStart || !periodEnd || !destination) {
+      setError('Period and destination are required.')
+      return
+    }
+    if (!insuredValid(holder)) {
+      setError('Holder needs email + first name + last name + date of birth.')
+      return
+    }
+    if (showExtras && extras.some(x => !insuredValid(x))) {
+      setError('Every additional insured needs email + first name + last name + date of birth.')
       return
     }
     setSaving(true)
@@ -539,9 +571,16 @@ function PolicyDetailDialog({
   async function save() {
     if (!edit) return
     setError(null)
-    if (!edit.holder.firstName || !edit.holder.lastName || !edit.holder.email
-        || !edit.holder.dateOfBirth || !edit.periodStart || !edit.periodEnd || !edit.destination) {
-      setError('Please fill in the required fields.')
+    if (!edit.periodStart || !edit.periodEnd || !edit.destination) {
+      setError('Period and destination are required.')
+      return
+    }
+    if (!insuredValid(edit.holder)) {
+      setError('Holder needs email + first name + last name + date of birth.')
+      return
+    }
+    if (edit.type !== 'Individual' && edit.extras.some(x => !insuredValid(x))) {
+      setError('Every additional insured needs email + first name + last name + date of birth.')
       return
     }
     setSaving(true)
@@ -818,92 +857,363 @@ function CountryCombobox({ value, onChange }: { value: string; onChange: (v: str
 }
 
 function InsuredEditor({ value, onChange }: { value: InsuredInput; onChange: (v: Partial<InsuredInput>) => void }) {
-  const [query, setQuery] = useState('')
-  const [suggestions, setSuggestions] = useState<InsuredOption[]>([])
-  const [showSuggest, setShowSuggest] = useState(false)
+  // Email-first flow. As the user types an email, look it up. If it exists,
+  // link to that person and lock the rest of the fields. If not, expose the
+  // name / DOB / phone fields so the user fills a new record.
+  const [lookupStatus, setLookupStatus] = useState<'idle' | 'checking' | 'found' | 'new'>('idle')
 
   useEffect(() => {
-    if (!query.trim() || query.length < 2) { setSuggestions([]); return }
+    const email = value.email.trim().toLowerCase()
+    // Defer lookup until it at least looks like an email.
+    if (!email || !email.includes('@') || !email.includes('.')) {
+      setLookupStatus('idle')
+      if (value.id) onChange({ id: null })
+      return
+    }
     let cancelled = false
-    const id = setTimeout(async () => {
-      const r = await fetch(`/api/admin/insureds/search?term=${encodeURIComponent(query)}`)
+    setLookupStatus('checking')
+    const t = setTimeout(async () => {
+      const r = await fetch(`/api/admin/insureds/by-email?email=${encodeURIComponent(email)}`)
       if (cancelled) return
-      const data = await r.json() as InsuredOption[]
-      setSuggestions(data)
-    }, 250)
-    return () => { cancelled = true; clearTimeout(id) }
-  }, [query])
+      if (r.status === 404) {
+        if (value.id) onChange({ id: null })
+        setLookupStatus('new')
+      } else if (r.ok) {
+        const data = await r.json()
+        // Skip if the user already linked this same record (avoid update loops).
+        if (value.id !== data.id) {
+          onChange({
+            id: data.id,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            dateOfBirth: data.dateOfBirth,
+            email: data.email,
+            phoneNumber: data.phoneNumber ?? '',
+          })
+        }
+        setLookupStatus('found')
+      }
+    }, 350)
+    return () => { cancelled = true; clearTimeout(t) }
+    // eslint-disable-next-line
+  }, [value.email])
 
-  function pick(o: InsuredOption) {
-    onChange({
-      id: o.id,
-      firstName: o.firstName,
-      lastName: o.lastName,
-      dateOfBirth: o.dateOfBirth,
-      email: o.email,
-      phoneNumber: o.phoneNumber ?? '',
-    })
-    setQuery(`${o.firstName} ${o.lastName} <${o.email}>`)
-    setShowSuggest(false)
-  }
-
-  function clearLink() {
-    // Clear every field so the user fills a fresh record from scratch. Keeping
-    // values around made name/DOB edits silently fall back to the existing
-    // insured via the backend's email lookup.
-    onChange({ id: null, firstName: '', lastName: '', dateOfBirth: '', email: '', phoneNumber: '' })
-    setQuery('')
-  }
+  const linked = !!value.id
+  const showNewFields = !linked && (lookupStatus === 'new' || lookupStatus === 'idle')
 
   return (
     <div className="space-y-2">
-      <div className="relative">
-        <Field label={value.id ? 'Existing insured (linked by id)' : 'Find existing insured (or fill new below)'}>
-          <input
-            value={query}
-            onChange={e => { setQuery(e.target.value); setShowSuggest(true); if (value.id) onChange({ id: null }) }}
-            onFocus={() => setShowSuggest(true)}
-            onBlur={() => setTimeout(() => setShowSuggest(false), 150)}
-            placeholder="search name or email…"
-            className="border border-pa-line px-2 py-1 text-sm w-full"
-          />
-        </Field>
-        {showSuggest && suggestions.length > 0 && (
-          <div className="absolute z-10 left-0 right-0 bg-white border border-pa-line max-h-64 overflow-y-auto">
-            {suggestions.map(s => (
-              <button
-                type="button"
-                key={s.id}
-                onMouseDown={() => pick(s)}
-                className="block w-full text-left px-3 py-1.5 text-xs hover:bg-pa-panel border-b border-pa-line"
-              >
-                <div className="text-gray-800">{s.firstName} {s.lastName} <span className="text-gray-400">({s.dateOfBirth})</span></div>
-                <div className="text-gray-500">{s.email}</div>
+      <Field label="Email">
+        <input
+          type="email"
+          value={value.email}
+          onChange={e => onChange({ email: e.target.value })}
+          placeholder="person@example.com"
+          className="border border-pa-line px-2 py-1 text-sm w-full"
+        />
+      </Field>
+
+      {lookupStatus === 'checking' && (
+        <div className="text-xs text-gray-400">Looking up…</div>
+      )}
+
+      {linked && lookupStatus === 'found' && (
+        <div className="border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs flex items-start justify-between gap-2">
+          <div>
+            <div className="text-emerald-800 font-semibold">Existing insured — linked</div>
+            <div className="text-gray-700 mt-0.5">
+              {value.firstName} {value.lastName} · born {value.dateOfBirth}
+              {value.phoneNumber ? ` · ${value.phoneNumber}` : ''}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNewFields && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="First name">
+            <input value={value.firstName} onChange={e => onChange({ firstName: e.target.value })}
+              className="border border-pa-line px-2 py-1 text-sm w-full" />
+          </Field>
+          <Field label="Last name">
+            <input value={value.lastName} onChange={e => onChange({ lastName: e.target.value })}
+              className="border border-pa-line px-2 py-1 text-sm w-full" />
+          </Field>
+          <Field label="Date of birth">
+            <input type="date" value={value.dateOfBirth} onChange={e => onChange({ dateOfBirth: e.target.value })}
+              className="border border-pa-line px-2 py-1 text-sm w-full" />
+          </Field>
+          <Field label="Phone (optional)">
+            <input value={value.phoneNumber} onChange={e => onChange({ phoneNumber: e.target.value })}
+              className="border border-pa-line px-2 py-1 text-sm w-full" />
+          </Field>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ----- Insureds tab -------------------------------------------------------
+
+interface InsuredRow {
+  id: string
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  email: string
+  phoneNumber: string | null
+  policyCount: number
+}
+
+interface InsuredDetail {
+  id: string
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  email: string
+  phoneNumber: string | null
+  createdAt: string
+  policies: Array<{
+    id: string
+    displayNumber: string
+    tier: string
+    type: string
+    duration: string
+    periodStart: string
+    periodEnd: string
+    status: 'Active' | 'Expired' | 'Cancelled'
+    isHolder: boolean
+  }>
+}
+
+function InsuredsBody() {
+  const [search, setSearch] = useState('')
+  const [rows, setRows] = useState<InsuredRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editId, setEditId] = useState<string | null>(null)
+
+  async function load() {
+    setLoading(true)
+    try {
+      const u = new URL('/api/admin/insureds', window.location.origin)
+      if (search.trim()) u.searchParams.set('search', search.trim())
+      u.searchParams.set('take', '200')
+      const r = await fetch(u)
+      const data = await r.json()
+      setRows(data.items ?? [])
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [])
+  useEffect(() => {
+    const id = setTimeout(load, 300)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line
+  }, [search])
+
+  return (
+    <>
+      <main className="max-w-7xl mx-auto px-4 py-4 space-y-3">
+        <div className="bg-white border border-pa-line">
+          <div className="bg-pa-panel border-b border-pa-line px-3 py-2 text-xs uppercase tracking-widest text-pa-navy font-bold">
+            Insured Search
+          </div>
+          <div className="p-3 flex items-center gap-3 border-b border-pa-line">
+            <label className="text-xs uppercase tracking-widest text-gray-500">Search</label>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="email, first name, last name…"
+              className="border border-pa-line px-2 py-1 text-sm flex-1 outline-none focus:border-pa-navy"
+            />
+            <div className="text-xs text-gray-400">{rows.length} result{rows.length === 1 ? '' : 's'}</div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-pa-panel border-b border-pa-line text-pa-navy">
+                <tr>
+                  <Th>Name</Th>
+                  <Th>Date of birth</Th>
+                  <Th>Email</Th>
+                  <Th>Phone</Th>
+                  <Th className="text-center">Policies</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && <tr><td colSpan={5} className="p-4 text-center text-gray-400">Loading…</td></tr>}
+                {!loading && rows.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-gray-400">No insureds match.</td></tr>}
+                {!loading && rows.map(r => (
+                  <tr
+                    key={r.id}
+                    onClick={() => setEditId(r.id)}
+                    className="border-b border-pa-line hover:bg-pa-panel/60 cursor-pointer"
+                  >
+                    <Td>{r.firstName} {r.lastName}</Td>
+                    <Td>{r.dateOfBirth}</Td>
+                    <Td className="text-gray-700">{r.email}</Td>
+                    <Td>{r.phoneNumber ?? '—'}</Td>
+                    <Td className="text-center">{r.policyCount}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+
+      {editId && (
+        <InsuredDetailDialog
+          id={editId}
+          onClose={() => setEditId(null)}
+          onUpdated={() => load()}
+        />
+      )}
+    </>
+  )
+}
+
+function InsuredDetailDialog({ id, onClose, onUpdated }: { id: string; onClose: () => void; onUpdated: () => void }) {
+  const [detail, setDetail] = useState<InsuredDetail | null>(null)
+  const [edit, setEdit] = useState<{
+    firstName: string
+    lastName: string
+    dateOfBirth: string
+    email: string
+    phoneNumber: string
+  } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function load() {
+    const r = await fetch(`/api/admin/insureds/${id}`)
+    if (!r.ok) return
+    const data = await r.json() as InsuredDetail
+    setDetail(data)
+    setEdit({
+      firstName: data.firstName,
+      lastName: data.lastName,
+      dateOfBirth: data.dateOfBirth,
+      email: data.email,
+      phoneNumber: data.phoneNumber ?? '',
+    })
+  }
+
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [id])
+
+  async function save() {
+    if (!edit) return
+    setError(null)
+    if (!edit.firstName.trim() || !edit.lastName.trim() || !edit.email.trim() || !edit.dateOfBirth) {
+      setError('First name, last name, date of birth and email are required.')
+      return
+    }
+    setSaving(true)
+    try {
+      const r = await fetch(`/api/admin/insureds/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: edit.firstName.trim(),
+          lastName: edit.lastName.trim(),
+          dateOfBirth: edit.dateOfBirth,
+          email: edit.email.trim(),
+          phoneNumber: edit.phoneNumber.trim() || null,
+        }),
+      })
+      if (r.status === 409) {
+        const body = await r.json().catch(() => ({})) as { error?: string }
+        setError(body.error ?? 'Email already in use by another insured.')
+        return
+      }
+      if (!r.ok) { setError(`Save failed: ${await r.text()}`); return }
+      await load()
+      onUpdated()
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white border border-pa-line w-full max-w-3xl">
+        <div className="bg-pa-panel border-b border-pa-line px-3 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-xs uppercase tracking-widest text-pa-navy font-bold">Insured</span>
+            <span className="text-pa-navy">{detail ? `${detail.firstName} ${detail.lastName}` : '…'}</span>
+          </div>
+          <button onClick={onClose} className="text-xs uppercase tracking-wider px-3 py-1 border border-pa-line bg-white hover:bg-pa-panel">Close</button>
+        </div>
+
+        {!detail || !edit ? (
+          <div className="p-8 text-center text-gray-400 text-sm">Loading…</div>
+        ) : (
+          <div className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
+            <SectionHeader>Details</SectionHeader>
+            <div className="border border-t-0 border-pa-line p-3 grid grid-cols-2 gap-3">
+              <Field label="First name">
+                <input value={edit.firstName} onChange={e => setEdit(p => p ? { ...p, firstName: e.target.value } : p)}
+                  className="border border-pa-line px-2 py-1 text-sm w-full" />
+              </Field>
+              <Field label="Last name">
+                <input value={edit.lastName} onChange={e => setEdit(p => p ? { ...p, lastName: e.target.value } : p)}
+                  className="border border-pa-line px-2 py-1 text-sm w-full" />
+              </Field>
+              <Field label="Date of birth">
+                <input type="date" value={edit.dateOfBirth} onChange={e => setEdit(p => p ? { ...p, dateOfBirth: e.target.value } : p)}
+                  className="border border-pa-line px-2 py-1 text-sm w-full" />
+              </Field>
+              <Field label="Email">
+                <input type="email" value={edit.email} onChange={e => setEdit(p => p ? { ...p, email: e.target.value } : p)}
+                  className="border border-pa-line px-2 py-1 text-sm w-full" />
+              </Field>
+              <Field label="Phone (optional)">
+                <input value={edit.phoneNumber} onChange={e => setEdit(p => p ? { ...p, phoneNumber: e.target.value } : p)}
+                  className="border border-pa-line px-2 py-1 text-sm w-full" />
+              </Field>
+            </div>
+
+            <SectionHeader>Policies ({detail.policies.length})</SectionHeader>
+            <div className="border border-t-0 border-pa-line">
+              {detail.policies.length === 0 && (
+                <div className="px-3 py-3 text-xs text-gray-400">Not on any policy.</div>
+              )}
+              {detail.policies.length > 0 && (
+                <table className="w-full text-xs">
+                  <thead className="bg-pa-panel text-pa-navy border-b border-pa-line">
+                    <tr>
+                      <Th>Policy</Th>
+                      <Th>Type</Th>
+                      <Th>Tier</Th>
+                      <Th>Period</Th>
+                      <Th>Role</Th>
+                      <Th>Status</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.policies.map(p => (
+                      <tr key={p.id} className="border-b border-pa-line last:border-b-0">
+                        <Td className="font-mono">{p.displayNumber}</Td>
+                        <Td>{p.type}</Td>
+                        <Td>{p.tier}</Td>
+                        <Td>{p.periodStart} – {p.periodEnd}</Td>
+                        <Td>{p.isHolder ? <strong className="text-pa-navy">Holder</strong> : 'Insured'}</Td>
+                        <Td><StatusBadge status={p.status} /></Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {error && <div className="bg-rose-50 border border-rose-300 text-rose-700 text-xs px-3 py-2">{error}</div>}
+
+            <div className="border-t border-pa-line pt-3 flex justify-end gap-2">
+              <button onClick={onClose} className="text-xs uppercase tracking-wider px-3 py-1 border border-pa-line bg-white hover:bg-pa-panel">Discard</button>
+              <button onClick={save} disabled={saving} className="text-xs uppercase tracking-wider px-3 py-1 border border-pa-navy bg-pa-navy text-white hover:bg-pa-steel disabled:opacity-50">
+                {saving ? 'Saving…' : 'Save changes'}
               </button>
-            ))}
+            </div>
           </div>
         )}
-        {value.id && (
-          <button type="button" onClick={clearLink} className="text-xs text-rose-600 underline mt-1">Unlink and enter new</button>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="First name">
-          <input value={value.firstName} disabled={!!value.id} onChange={e => onChange({ firstName: e.target.value })} className="border border-pa-line px-2 py-1 text-sm w-full disabled:bg-pa-panel disabled:text-gray-500" />
-        </Field>
-        <Field label="Last name">
-          <input value={value.lastName} disabled={!!value.id} onChange={e => onChange({ lastName: e.target.value })} className="border border-pa-line px-2 py-1 text-sm w-full disabled:bg-pa-panel disabled:text-gray-500" />
-        </Field>
-        <Field label="Date of birth">
-          <input type="date" value={value.dateOfBirth} disabled={!!value.id} onChange={e => onChange({ dateOfBirth: e.target.value })} className="border border-pa-line px-2 py-1 text-sm w-full disabled:bg-pa-panel disabled:text-gray-500" />
-        </Field>
-        <Field label="Email">
-          <input type="email" value={value.email} disabled={!!value.id} onChange={e => onChange({ email: e.target.value })} className="border border-pa-line px-2 py-1 text-sm w-full disabled:bg-pa-panel disabled:text-gray-500" />
-        </Field>
-        <Field label="Phone (optional)">
-          <input value={value.phoneNumber} disabled={!!value.id} onChange={e => onChange({ phoneNumber: e.target.value })} className="border border-pa-line px-2 py-1 text-sm w-full disabled:bg-pa-panel disabled:text-gray-500" />
-        </Field>
       </div>
     </div>
   )

@@ -125,6 +125,9 @@ public class AdminPoliciesController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<object>> Update(Guid id, [FromBody] AddPolicyInput body, CancellationToken ct)
     {
         if (body.Holder is null) return BadRequest("Holder is required.");
+        if (string.IsNullOrWhiteSpace(body.Holder.Email)) return BadRequest("Email is required for every insured.");
+        foreach (var extra in body.AdditionalInsureds ?? Array.Empty<AddInsuredInput>())
+            if (string.IsNullOrWhiteSpace(extra.Email)) return BadRequest("Email is required for every insured.");
 
         var policy = await db.Policies
             .Include(p => p.InsuredLinks).ThenInclude(l => l.Insured)
@@ -184,6 +187,9 @@ public class AdminPoliciesController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<object>> Add([FromBody] AddPolicyInput body, CancellationToken ct)
     {
         if (body.Holder is null) return BadRequest("Holder is required.");
+        if (string.IsNullOrWhiteSpace(body.Holder.Email)) return BadRequest("Email is required for every insured.");
+        foreach (var extra in body.AdditionalInsureds ?? Array.Empty<AddInsuredInput>())
+            if (string.IsNullOrWhiteSpace(extra.Email)) return BadRequest("Email is required for every insured.");
 
         var policy = new Policy
         {
@@ -199,24 +205,18 @@ public class AdminPoliciesController(AppDbContext db) : ControllerBase
 
         async Task<Insured> ResolveAsync(AddInsuredInput input)
         {
-            if (input.Id is Guid id)
-            {
-                var existing = await db.Insureds.FirstOrDefaultAsync(i => i.Id == id, ct);
-                if (existing is not null) return existing;
-            }
-            // Fallback: match by email so the same person stays linked across policies.
-            if (!string.IsNullOrWhiteSpace(input.Email))
-            {
-                var byEmail = await db.Insureds.FirstOrDefaultAsync(i => i.Email == input.Email, ct);
-                if (byEmail is not null) return byEmail;
-            }
+            // Email is the identity key. Existing row with the same email is
+            // the same person — link, don't duplicate.
+            var email = input.Email.Trim();
+            var existing = await db.Insureds.FirstOrDefaultAsync(i => i.Email == email, ct);
+            if (existing is not null) return existing;
             var created = new Insured
             {
                 FirstName = input.FirstName,
                 LastName = input.LastName,
                 DateOfBirth = input.DateOfBirth,
-                Email = input.Email,
-                PhoneNumber = input.PhoneNumber,
+                Email = email,
+                PhoneNumber = string.IsNullOrWhiteSpace(input.PhoneNumber) ? null : input.PhoneNumber.Trim(),
             };
             db.Insureds.Add(created);
             return created;

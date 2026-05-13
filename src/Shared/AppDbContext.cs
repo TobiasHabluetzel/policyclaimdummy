@@ -17,7 +17,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         mb.Entity<Insured>(e =>
         {
             e.HasKey(x => x.Id);
-            e.HasIndex(x => x.Email);
+            // Unique across all Insureds. Postgres allows multiple NULLs by
+            // default, so additional insureds without an email don't clash.
+            e.HasIndex(x => x.Email).IsUnique();
             e.Property(x => x.FirstName).HasMaxLength(100);
             e.Property(x => x.LastName).HasMaxLength(100);
             e.Property(x => x.Email).HasMaxLength(200);

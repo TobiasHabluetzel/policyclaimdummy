@@ -39,9 +39,21 @@ public static class Seeder
             "Steiner","Hofmann","Bauer","Lehmann","Berger","Frei","Wyss","Kunz",
         };
 
-        // 25 unique insureds with a few "multi-policy" emails sprinkled in.
-        var insureds = new List<Insured>();
-        for (int i = 0; i < 25; i++)
+        // One deterministic "Multi Service" insured for the portal multi-policy
+        // scenario — many policies will share this one Insured row via the
+        // M:N PolicyInsured junction. (Same email on multiple Insured rows is
+        // no longer allowed; emails are unique.)
+        var multiService = new Insured
+        {
+            FirstName = "Multi",
+            LastName = "Service",
+            DateOfBirth = new DateOnly(1980, 6, 15),
+            Email = "multiservice1@example.com",
+            PhoneNumber = "+41 79 100 00 00",
+        };
+
+        var insureds = new List<Insured> { multiService };
+        for (int i = 0; i < 24; i++)
         {
             var first = firsts[rng.Next(firsts.Length)];
             var last = lasts[rng.Next(lasts.Length)];
@@ -56,10 +68,6 @@ public static class Seeder
                 PhoneNumber = $"+41 79 {rng.Next(100, 999)} {rng.Next(10, 99)} {rng.Next(10, 99)}",
             });
         }
-        // Two demo emails that hold multiple policies (portal multi-policy scenario).
-        insureds[0].Email = "multiservice1@example.com";
-        insureds[5].Email = "multiservice1@example.com";
-        insureds[9].Email = "multiservice1@example.com";
         db.Insureds.AddRange(insureds);
         await db.SaveChangesAsync(ct);
 

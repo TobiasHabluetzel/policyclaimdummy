@@ -6,6 +6,7 @@ public class Insured
     public string FirstName { get; set; } = "";
     public string LastName { get; set; } = "";
     public DateOnly DateOfBirth { get; set; }
+    /// <summary>Required and unique. Email is the lookup key for an Insured.</summary>
     public string Email { get; set; } = "";
     public string? PhoneNumber { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
