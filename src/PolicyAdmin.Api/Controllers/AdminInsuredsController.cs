@@ -64,24 +64,34 @@ public class AdminInsuredsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<object>> Get(Guid id, CancellationToken ct)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var i = await db.Insureds.AsNoTracking()
-            .Include(x => x.PolicyLinks)
-                .ThenInclude(l => l.Policy)
-                    .ThenInclude(p => p!.InsuredLinks)
-                        .ThenInclude(il => il.Insured)
+
+        var insured = await db.Insureds.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (i is null) return NotFound();
+        if (insured is null) return NotFound();
+
+        // Two-step fetch with split queries to avoid the cartesian explosion
+        // (PolicyLinks → Policy → InsuredLinks → Insured) that single-shot
+        // Include hits with multi-traveler policies.
+        var links = await db.PolicyInsureds.AsNoTracking()
+            .Where(pi => pi.InsuredId == id)
+            .Include(pi => pi.Policy)
+                .ThenInclude(p => p!.InsuredLinks)
+                    .ThenInclude(il => il.Insured)
+            .AsSplitQuery()
+            .ToListAsync(ct);
+
         return Ok(new
         {
-            id = i.Id,
-            firstName = i.FirstName,
-            lastName = i.LastName,
-            dateOfBirth = i.DateOfBirth.ToString("yyyy-MM-dd"),
-            email = i.Email,
-            phoneNumber = i.PhoneNumber,
-            identityNumber = i.IdentityNumber,
-            createdAt = i.CreatedAt,
-            policies = i.PolicyLinks
+            id = insured.Id,
+            firstName = insured.FirstName,
+            lastName = insured.LastName,
+            dateOfBirth = insured.DateOfBirth.ToString("yyyy-MM-dd"),
+            email = insured.Email,
+            phoneNumber = insured.PhoneNumber,
+            identityNumber = insured.IdentityNumber,
+            createdAt = insured.CreatedAt,
+            policies = links
+                .Where(l => l.Policy is not null)
                 .OrderByDescending(l => l.Policy!.CreatedAt)
                 .Select(l => new
                 {
@@ -96,14 +106,17 @@ public class AdminInsuredsController(AppDbContext db) : ControllerBase
                     status = PolicyHelpers.DeriveStatus(l.Policy, today).ToString(),
                     isHolder = l.IsHolder,
                     insureds = l.Policy.InsuredLinks
+                        .Where(il => il.Insured is not null)
                         .OrderByDescending(il => il.IsHolder)
                         .Select(il => new
                         {
                             firstName = il.Insured!.FirstName,
                             lastName = il.Insured.LastName,
                             isHolder = il.IsHolder,
-                        }),
-                }),
+                        })
+                        .ToList(),
+                })
+                .ToList(),
         });
     }
 
