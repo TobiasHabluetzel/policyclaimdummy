@@ -848,7 +848,10 @@ function InsuredEditor({ value, onChange }: { value: InsuredInput; onChange: (v:
   }
 
   function clearLink() {
-    onChange({ id: null })
+    // Clear every field so the user fills a fresh record from scratch. Keeping
+    // values around made name/DOB edits silently fall back to the existing
+    // insured via the backend's email lookup.
+    onChange({ id: null, firstName: '', lastName: '', dateOfBirth: '', email: '', phoneNumber: '' })
     setQuery('')
   }
 

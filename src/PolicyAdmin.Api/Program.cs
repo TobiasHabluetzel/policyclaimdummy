@@ -10,7 +10,9 @@ if (!string.IsNullOrEmpty(connectionString))
     builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(connectionString));
 }
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(
+        new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 var app = builder.Build();
 
