@@ -69,15 +69,33 @@ public class AdminInsuredsController(AppDbContext db) : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (insured is null) return NotFound();
 
-        // Two-step fetch with split queries to avoid the cartesian explosion
-        // (PolicyLinks → Policy → InsuredLinks → Insured) that single-shot
-        // Include hits with multi-traveler policies.
-        var links = await db.PolicyInsureds.AsNoTracking()
-            .Where(pi => pi.InsuredId == id)
-            .Include(pi => pi.Policy)
-                .ThenInclude(p => p!.InsuredLinks)
-                    .ThenInclude(il => il.Insured)
-            .AsSplitQuery()
+        // Project each linked policy directly in SQL — no Include, no cartesian
+        // join. Each policy's travelers are fetched as a subquery per row.
+        var policyRows = await db.PolicyInsureds.AsNoTracking()
+            .Where(pi => pi.InsuredId == id && pi.Policy != null)
+            .OrderByDescending(pi => pi.Policy!.CreatedAt)
+            .Select(pi => new
+            {
+                Id = pi.Policy!.Id,
+                DisplayNumber = pi.Policy.DisplayNumber,
+                Tier = pi.Policy.Tier,
+                Type = pi.Policy.Type,
+                Duration = pi.Policy.Duration,
+                PeriodStart = pi.Policy.PeriodStart,
+                PeriodEnd = pi.Policy.PeriodEnd,
+                Destination = pi.Policy.Destination,
+                CancelledAt = pi.Policy.CancelledAt,
+                IsHolder = pi.IsHolder,
+                Travelers = pi.Policy.InsuredLinks
+                    .OrderByDescending(il => il.IsHolder)
+                    .Select(il => new
+                    {
+                        firstName = il.Insured!.FirstName,
+                        lastName = il.Insured.LastName,
+                        isHolder = il.IsHolder,
+                    })
+                    .ToList(),
+            })
             .ToListAsync(ct);
 
         return Ok(new
@@ -90,33 +108,21 @@ public class AdminInsuredsController(AppDbContext db) : ControllerBase
             phoneNumber = insured.PhoneNumber,
             identityNumber = insured.IdentityNumber,
             createdAt = insured.CreatedAt,
-            policies = links
-                .Where(l => l.Policy is not null)
-                .OrderByDescending(l => l.Policy!.CreatedAt)
-                .Select(l => new
-                {
-                    id = l.Policy!.Id,
-                    displayNumber = l.Policy.DisplayNumber,
-                    tier = l.Policy.Tier.ToString(),
-                    type = l.Policy.Type.ToString(),
-                    duration = l.Policy.Duration.ToString(),
-                    periodStart = l.Policy.PeriodStart.ToString("yyyy-MM-dd"),
-                    periodEnd = l.Policy.PeriodEnd.ToString("yyyy-MM-dd"),
-                    destination = l.Policy.Destination,
-                    status = PolicyHelpers.DeriveStatus(l.Policy, today).ToString(),
-                    isHolder = l.IsHolder,
-                    insureds = l.Policy.InsuredLinks
-                        .Where(il => il.Insured is not null)
-                        .OrderByDescending(il => il.IsHolder)
-                        .Select(il => new
-                        {
-                            firstName = il.Insured!.FirstName,
-                            lastName = il.Insured.LastName,
-                            isHolder = il.IsHolder,
-                        })
-                        .ToList(),
-                })
-                .ToList(),
+            policies = policyRows.Select(p => new
+            {
+                id = p.Id,
+                displayNumber = p.DisplayNumber,
+                tier = p.Tier.ToString(),
+                type = p.Type.ToString(),
+                duration = p.Duration.ToString(),
+                periodStart = p.PeriodStart.ToString("yyyy-MM-dd"),
+                periodEnd = p.PeriodEnd.ToString("yyyy-MM-dd"),
+                destination = p.Destination,
+                status = PolicyHelpers.DeriveStatus(
+                    new Policy { PeriodEnd = p.PeriodEnd, CancelledAt = p.CancelledAt }, today).ToString(),
+                isHolder = p.IsHolder,
+                insureds = p.Travelers,
+            }),
         });
     }
 
