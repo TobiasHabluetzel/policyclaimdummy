@@ -54,3 +54,39 @@ public class CoverageTemplate
     public string Name { get; set; } = "";
     public string CoverageJson { get; set; } = "[]";
 }
+
+/// <summary>
+/// Local mirror of an automated.claims claim. Inserted/upserted by the
+/// reviewed webhook handler in ClaimsOps so the ops console can show
+/// claimant, incident, costs and review status without re-fetching AC.
+/// </summary>
+public class Claim
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public required string ShortCode { get; set; }
+    public required string AcClaimId { get; set; }
+
+    public string Status { get; set; } = "submitted";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ReviewedAt { get; set; }
+
+    public string? PolicyReference { get; set; }
+    public string? ProductCode { get; set; }
+    public string? Currency { get; set; }
+    public DateOnly? ClaimDate { get; set; }
+
+    public string? ClaimantFirstName { get; set; }
+    public string? ClaimantLastName { get; set; }
+    public DateOnly? ClaimantDateOfBirth { get; set; }
+    public string? ClaimantEmail { get; set; }
+    public string? ClaimantPhoneNumber { get; set; }
+
+    public string? IncidentDescription { get; set; }
+    public DateOnly? IncidentDate { get; set; }
+    public string? IncidentType { get; set; }
+
+    public string? CostsJson { get; set; }
+    public string? DocumentsJson { get; set; }
+    public string? ReviewJson { get; set; }
+}

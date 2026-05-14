@@ -8,6 +8,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Policy> Policies => Set<Policy>();
     public DbSet<PolicyInsured> PolicyInsureds => Set<PolicyInsured>();
     public DbSet<CoverageTemplate> CoverageTemplates => Set<CoverageTemplate>();
+    public DbSet<Claim> Claims => Set<Claim>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -52,6 +53,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Tier).HasConversion<string>().HasMaxLength(16);
             e.Property(x => x.Name).HasMaxLength(100);
             e.Property(x => x.CoverageJson).HasColumnType("jsonb");
+        });
+
+        mb.Entity<Claim>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.ShortCode).IsUnique();
+            e.HasIndex(x => x.AcClaimId);
+            e.Property(x => x.ShortCode).HasMaxLength(32);
+            e.Property(x => x.AcClaimId).HasMaxLength(64);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.PolicyReference).HasMaxLength(64);
+            e.Property(x => x.ProductCode).HasMaxLength(64);
+            e.Property(x => x.Currency).HasMaxLength(8);
+            e.Property(x => x.CostsJson).HasColumnType("jsonb");
+            e.Property(x => x.DocumentsJson).HasColumnType("jsonb");
+            e.Property(x => x.ReviewJson).HasColumnType("jsonb");
         });
     }
 }

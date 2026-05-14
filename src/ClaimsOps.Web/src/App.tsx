@@ -1,4 +1,7 @@
-export default function App() {
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { ClaimDetailPage } from './ClaimDetailPage'
+
+function InboxPlaceholder() {
   return (
     <div className="min-h-screen bg-co-surface font-sans text-slate-800">
       <header className="bg-white border-b border-co-line">
@@ -39,9 +42,20 @@ export default function App() {
         </div>
 
         <div className="bg-white rounded-xl border border-co-line shadow-sm p-8 text-center text-sm text-slate-400">
-          Claims operations console is being prepared. Next deploy lands the claim inbox, detail view and status pipeline.
+          Open a claim directly at <code className="text-slate-600">/claim/&lt;short-code&gt;</code> — list view lands in a later iteration.
         </div>
       </main>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/claim/:shortCode" element={<ClaimDetailPage />} />
+        <Route path="*" element={<InboxPlaceholder />} />
+      </Routes>
+    </BrowserRouter>
   )
 }
