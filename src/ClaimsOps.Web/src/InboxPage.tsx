@@ -24,12 +24,12 @@ interface Tab {
   status?: string            // server-side status filter (undefined = all)
 }
 
-// Tabs map to whatever statuses AC ever reports on the row. We don't know the
-// exact set yet — keep them as a sensible starting point and refine when real
-// data comes through. "Inbox" defaults to anything not yet reviewed.
+// For the demo a claim only lands here once AC has finished reviewing it, so
+// the Inbox tab maps to status=reviewed. The downstream tabs (In review /
+// Approved / Paid) are placeholders for ops states we don't track yet.
 const TABS: Tab[] = [
-  { key: 'inbox',    label: 'Inbox',     status: 'submitted' },
-  { key: 'in-review',label: 'In review', status: 'reviewing' },
+  { key: 'inbox',    label: 'Inbox',     status: 'reviewed' },
+  { key: 'in-review',label: 'In review', status: 'in-review' },
   { key: 'approved', label: 'Approved',  status: 'approved' },
   { key: 'paid',     label: 'Paid',      status: 'paid' },
   { key: 'all',      label: 'All claims' },
