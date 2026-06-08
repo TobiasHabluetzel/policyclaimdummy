@@ -66,6 +66,7 @@ public class PoliciesController(AppDbContext db) : ControllerBase
                     dateOfBirth = l.Insured.DateOfBirth.ToString("yyyy-MM-dd"),
                     email = l.Insured.Email,
                     phoneNumber = l.Insured.PhoneNumber,
+                    identityNumber = l.Insured.IdentityNumber,
                     isHolder = l.IsHolder,
                 });
 
