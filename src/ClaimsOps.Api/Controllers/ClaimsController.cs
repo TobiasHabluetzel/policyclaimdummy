@@ -33,6 +33,33 @@ public class ClaimsController(ClaimService claims, ILogger<ClaimsController> log
         return Ok();
     }
 
+    [HttpGet("api/claims")]
+    public async Task<IActionResult> List(
+        [FromQuery] string? status,
+        [FromQuery] string? search,
+        [FromQuery] int offset = 0,
+        [FromQuery] int limit = 50,
+        CancellationToken ct = default)
+    {
+        var (items, total) = await claims.ListAsync(status, search, offset, limit, ct);
+        return Ok(new
+        {
+            total,
+            items = items.Select(c => new
+            {
+                shortCode = c.ShortCode,
+                acClaimId = c.AcClaimId,
+                status = c.Status,
+                createdAt = c.CreatedAt,
+                reviewedAt = c.ReviewedAt,
+                policyReference = c.PolicyReference,
+                claimDate = c.ClaimDate?.ToString("yyyy-MM-dd"),
+                claimantName = string.Join(' ', new[] { c.ClaimantFirstName, c.ClaimantLastName }.Where(s => !string.IsNullOrWhiteSpace(s))),
+                claimantEmail = c.ClaimantEmail,
+            }),
+        });
+    }
+
     [HttpGet("api/claims/{shortCode}")]
     public async Task<IActionResult> GetClaim(string shortCode, CancellationToken ct)
     {

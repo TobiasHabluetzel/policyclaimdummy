@@ -36,6 +36,31 @@ public class ClaimService(
     public async Task<Claim?> GetByShortCodeAsync(string shortCode, CancellationToken ct)
         => await db.Claims.AsNoTracking().FirstOrDefaultAsync(c => c.ShortCode == shortCode, ct);
 
+    /// <summary>Newest-first list for the inbox, with optional status filter and free-text search across short code, claimant name and email.</summary>
+    public async Task<(IReadOnlyList<Claim> Items, int Total)> ListAsync(
+        string? status, string? search, int offset, int limit, CancellationToken ct)
+    {
+        var q = db.Claims.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(status))
+            q = q.Where(c => c.Status == status);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            q = q.Where(c =>
+                c.ShortCode.Contains(s)
+                || (c.ClaimantEmail != null && c.ClaimantEmail.Contains(s))
+                || (c.ClaimantFirstName != null && c.ClaimantFirstName.Contains(s))
+                || (c.ClaimantLastName != null && c.ClaimantLastName.Contains(s))
+                || (c.PolicyReference != null && c.PolicyReference.Contains(s)));
+        }
+        var total = await q.CountAsync(ct);
+        var items = await q
+            .OrderByDescending(c => c.CreatedAt)
+            .Skip(offset).Take(limit)
+            .ToListAsync(ct);
+        return (items, total);
+    }
+
     public async Task<string?> LookupAcClaimIdAsync(string shortCode, CancellationToken ct)
         => (await db.Claims.AsNoTracking().FirstOrDefaultAsync(c => c.ShortCode == shortCode, ct))?.AcClaimId;
 
