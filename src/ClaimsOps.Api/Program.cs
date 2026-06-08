@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using Demo.ClaimsOps.Services;
 using Demo.Shared;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,23 @@ if (!string.IsNullOrEmpty(connectionString))
 }
 
 builder.Services.AddScoped<ClaimService>();
+
+// AC client — used to call POST /claims/{id}/submit when an
+// evidence-evaluated webhook arrives. Endpoint + token come from the same
+// env vars the claim wizard uses (ClaimsApi__Endpoint / ClaimsApi__ApiToken).
+builder.Services.AddHttpClient("ClaimsApi", client =>
+{
+    var endpoint = builder.Configuration["ClaimsApi:Endpoint"];
+    if (!string.IsNullOrEmpty(endpoint))
+    {
+        client.BaseAddress = new Uri(endpoint.TrimEnd('/') + "/");
+    }
+    var token = builder.Configuration["ClaimsApi:ApiToken"];
+    if (!string.IsNullOrEmpty(token))
+    {
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    }
+});
 
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(

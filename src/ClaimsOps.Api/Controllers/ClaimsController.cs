@@ -5,11 +5,16 @@ using Microsoft.AspNetCore.Mvc;
 namespace Demo.ClaimsOps.Controllers;
 
 [ApiController]
-public class ClaimsController(ClaimService claims, ILogger<ClaimsController> logger) : ControllerBase
+public class ClaimsController(
+    ClaimService claims,
+    IHttpClientFactory httpClientFactory,
+    ILogger<ClaimsController> logger) : ControllerBase
 {
     /// <summary>
-    /// AC's webhook receiver. We only care about reviewed claims for now;
-    /// other event types are acknowledged but ignored.
+    /// AC's webhook receiver. Two transitions matter for the demo:
+    ///   - evidence_evaluated → tell AC to submit the claim for review
+    ///   - reviewed           → land the row in the ops inbox
+    /// Everything else is acknowledged and ignored.
     /// </summary>
     [HttpPost("api/webhook")]
     public async Task<IActionResult> Webhook([FromBody] JsonElement payload, CancellationToken ct)
@@ -19,17 +24,58 @@ public class ClaimsController(ClaimService claims, ILogger<ClaimsController> log
             ? d : default;
         if (data.ValueKind != JsonValueKind.Object) return Ok();
 
-        // Hydrate on every AC event we receive. The upsert is idempotent, the
-        // payload carries the current status, and this is what lets the
-        // inbox show pending / processing / readyForReview / underReview
-        // claims as they progress — not just the reviewed ones.
-        try { await claims.HydrateFromWebhookAsync(data, ct); }
-        catch (Exception ex)
+        var status = data.TryGetProperty("status", out var s) ? s.GetString() : null;
+        var acClaimId = data.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String
+            ? idEl.GetString() : null;
+
+        // Evidence done → kick AC's review pipeline. AC's status flow is
+        // pending → processing → readyForReview → underReview → reviewed;
+        // POST /claims/{id}/submit nudges it past readyForReview.
+        if (!string.IsNullOrEmpty(acClaimId)
+            && (eventType == "claim.evidence_evaluated"
+                || string.Equals(status, "readyForReview", StringComparison.OrdinalIgnoreCase)))
         {
-            logger.LogError(ex, "[webhook] hydrate failed for event {EventType}", eventType);
+            try { await SubmitToAcAsync(acClaimId, ct); }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "[webhook] AC submit failed for {AcId}", acClaimId);
+            }
+            return Ok();
+        }
+
+        // Reviewed → mirror the claim into the inbox.
+        if (eventType == "claim.reviewed"
+            || string.Equals(status, "reviewed", StringComparison.OrdinalIgnoreCase))
+        {
+            try { await claims.HydrateFromWebhookAsync(data, ct); }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "[webhook] hydrate failed for event {EventType}", eventType);
+            }
         }
 
         return Ok();
+    }
+
+    private async Task SubmitToAcAsync(string acClaimId, CancellationToken ct)
+    {
+        var client = httpClientFactory.CreateClient("ClaimsApi");
+        if (client.BaseAddress is null)
+        {
+            logger.LogWarning("[webhook] ClaimsApi:Endpoint not configured — cannot submit {AcId}", acClaimId);
+            return;
+        }
+        using var res = await client.PostAsync($"claims/{acClaimId}/submit", content: null, ct);
+        if (!res.IsSuccessStatusCode)
+        {
+            var body = await res.Content.ReadAsStringAsync(ct);
+            logger.LogWarning("[webhook] AC submit {AcId} returned {Status}: {Body}",
+                acClaimId, (int)res.StatusCode, body);
+        }
+        else
+        {
+            logger.LogInformation("[webhook] AC submit triggered for {AcId}", acClaimId);
+        }
     }
 
     [HttpGet("api/claims")]
