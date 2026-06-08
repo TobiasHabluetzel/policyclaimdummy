@@ -19,15 +19,14 @@ public class ClaimsController(ClaimService claims, ILogger<ClaimsController> log
             ? d : default;
         if (data.ValueKind != JsonValueKind.Object) return Ok();
 
-        var status = data.TryGetProperty("status", out var s) ? s.GetString() : null;
-        if (eventType == "claim.reviewed"
-            || string.Equals(status, "reviewed", StringComparison.OrdinalIgnoreCase))
+        // Hydrate on every AC event we receive. The upsert is idempotent, the
+        // payload carries the current status, and this is what lets the
+        // inbox show pending / processing / readyForReview / underReview
+        // claims as they progress — not just the reviewed ones.
+        try { await claims.HydrateFromWebhookAsync(data, ct); }
+        catch (Exception ex)
         {
-            try { await claims.HydrateFromWebhookAsync(data, ct); }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "[webhook] hydrate failed");
-            }
+            logger.LogError(ex, "[webhook] hydrate failed for event {EventType}", eventType);
         }
 
         return Ok();
