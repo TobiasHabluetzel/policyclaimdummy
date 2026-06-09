@@ -149,6 +149,41 @@ public class ClaimsController(
         });
     }
 
+    /// <summary>
+    /// Streams an AC-hosted document through ClaimsOps so the browser
+    /// never needs the AC bearer token. URL pattern matches AC's:
+    /// /claims/{acClaimId}/documents/{documentId}, but keyed by our short
+    /// code so the link stays opaque to the ops user.
+    /// </summary>
+    [HttpGet("api/claims/{shortCode}/documents/{documentId}")]
+    public async Task<IActionResult> DownloadDocument(string shortCode, string documentId, CancellationToken ct)
+    {
+        var acId = await claims.LookupAcClaimIdAsync(shortCode, ct);
+        if (acId is null) return NotFound();
+
+        var client = httpClientFactory.CreateClient("ClaimsApi");
+        if (client.BaseAddress is null)
+        {
+            logger.LogWarning("[doc] ClaimsApi:Endpoint not configured — cannot stream {DocId}", documentId);
+            return StatusCode(502, new { error = "ClaimsApi endpoint is not configured." });
+        }
+
+        using var req = new HttpRequestMessage(HttpMethod.Get,
+            $"claims/{Uri.EscapeDataString(acId)}/documents/{Uri.EscapeDataString(documentId)}");
+        var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!res.IsSuccessStatusCode)
+        {
+            logger.LogWarning("[doc] AC {AcId}/documents/{DocId} returned {Status}", acId, documentId, (int)res.StatusCode);
+            return StatusCode((int)res.StatusCode);
+        }
+        var contentType = res.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+        var disposition = res.Content.Headers.ContentDisposition?.ToString();
+        if (!string.IsNullOrEmpty(disposition))
+            Response.Headers["Content-Disposition"] = disposition;
+        var stream = await res.Content.ReadAsStreamAsync(ct);
+        return File(stream, contentType);
+    }
+
     /// <summary>Short-code lookup used by the claim-app email ingest to detect customer replies.</summary>
     [HttpGet("api/claims/{shortCode}/ac-id")]
     public async Task<IActionResult> LookupAcId(string shortCode, CancellationToken ct)

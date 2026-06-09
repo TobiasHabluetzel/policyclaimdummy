@@ -179,7 +179,21 @@ public class ClaimService(
         => el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
     private static decimal? NumberFrom(JsonElement el, string prop)
-        => el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDecimal() : null;
+    {
+        // AC sometimes encodes monetary values as numeric strings ("150.00")
+        // to preserve decimal precision. Accept either shape.
+        if (!el.TryGetProperty(prop, out var v)) return null;
+        return v.ValueKind switch
+        {
+            JsonValueKind.Number => v.GetDecimal(),
+            JsonValueKind.String when decimal.TryParse(
+                v.GetString(),
+                System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var d) => d,
+            _ => null,
+        };
+    }
 
     private static DateOnly? ParseDate(JsonElement el, string prop)
     {

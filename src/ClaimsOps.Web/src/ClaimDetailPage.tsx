@@ -29,6 +29,17 @@ interface Cost {
   argumentation?: string | null
 }
 
+interface ReviewScenario {
+  coverage?: string | null
+  argumentation?: string | null
+  customerWording?: string | null
+  warnings?: string[] | null
+}
+
+interface Review {
+  scenario?: ReviewScenario | null
+}
+
 interface ClaimDetail {
   shortCode: string
   acClaimId: string
@@ -42,6 +53,7 @@ interface ClaimDetail {
   claimant: Claimant
   incident: Incident
   costs?: Cost[] | null
+  review?: Review | null
 }
 
 function formatMoney(amount?: number | null, currency?: string | null) {
@@ -152,6 +164,8 @@ function ClaimBody({ claim }: { claim: ClaimDetail }) {
         )}
       </Section>
 
+      <ReviewPanel claim={claim} />
+
       {claim.costs && claim.costs.length > 0 && (
         <div className="bg-white rounded-xl border border-co-line shadow-sm px-6 py-5">
           <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">Costs</h3>
@@ -178,7 +192,7 @@ function ClaimBody({ claim }: { claim: ClaimDetail }) {
                   <p className="text-xs text-slate-500 mt-2">
                     From{' '}
                     <a
-                      href={`https://staging-api.automated.claims/claims/${claim.acClaimId}/documents/${cost.documentId}`}
+                      href={`/api/claims/${encodeURIComponent(claim.shortCode)}/documents/${encodeURIComponent(cost.documentId ?? '')}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-co-blue underline"
@@ -202,6 +216,97 @@ function ClaimBody({ claim }: { claim: ClaimDetail }) {
         </div>
       )}
     </>
+  )
+}
+
+function coverageChip(label: string) {
+  const lower = label.toLowerCase()
+  const cls = lower.includes('covered') && !lower.includes('not')
+      ? 'bg-green-50 text-green-700 border-green-200'
+    : lower.includes('not covered') || lower === 'declined' || lower === 'rejected'
+      ? 'bg-red-50 text-red-700 border-red-200'
+    : 'bg-amber-50 text-amber-700 border-amber-200'
+  return <span className={`inline-block text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded border ${cls}`}>{label}</span>
+}
+
+function ReviewPanel({ claim }: { claim: ClaimDetail }) {
+  const scenario = claim.review?.scenario
+  const costs = claim.costs ?? []
+
+  // Cost roll-up. We use the per-cost isCovered string AC writes
+  // ("yes"/"no"/"partially") because review.costs is keyed by
+  // classification rather than by individual cost line.
+  const tally = costs.reduce(
+    (acc, c) => {
+      const k = (c.isCovered ?? '').toLowerCase()
+      if (k === 'yes') acc.covered++
+      else if (k === 'no') acc.notCovered++
+      else if (k) acc.partial++
+      else acc.unknown++
+      acc.total += c.amount ?? 0
+      if (k === 'yes') acc.coveredAmount += c.coveredAmount ?? c.amount ?? 0
+      else if (k && k !== 'no') acc.coveredAmount += c.coveredAmount ?? 0
+      return acc
+    },
+    { covered: 0, partial: 0, notCovered: 0, unknown: 0, total: 0, coveredAmount: 0 },
+  )
+  const currency = costs.find(c => c.currency)?.currency ?? claim.currency ?? ''
+
+  const [showRationale, setShowRationale] = useState(false)
+  const hasAnything = scenario?.coverage || scenario?.customerWording
+    || scenario?.argumentation || (scenario?.warnings && scenario.warnings.length > 0)
+    || costs.length > 0
+  if (!hasAnything) return null
+
+  const rollupParts: string[] = []
+  if (tally.covered) rollupParts.push(`${tally.covered} covered`)
+  if (tally.partial) rollupParts.push(`${tally.partial} partial`)
+  if (tally.notCovered) rollupParts.push(`${tally.notCovered} not covered`)
+  if (tally.unknown) rollupParts.push(`${tally.unknown} pending`)
+
+  return (
+    <div className="bg-white rounded-xl border border-co-line shadow-sm px-6 py-5">
+      <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">AC review</h3>
+
+      {scenario?.coverage && <div className="mb-3">{coverageChip(scenario.coverage)}</div>}
+
+      {scenario?.customerWording && (
+        <p className="text-sm text-slate-700 leading-relaxed mb-3">{scenario.customerWording}</p>
+      )}
+
+      {costs.length > 0 && (
+        <div className="text-xs text-slate-500 mb-3">
+          {rollupParts.join(' · ')}
+          {tally.total > 0 && (
+            <> — <span className="text-slate-700 font-medium">{currency} {tally.coveredAmount.toFixed(2)}</span> covered of {currency} {tally.total.toFixed(2)}</>
+          )}
+        </div>
+      )}
+
+      {scenario?.warnings && scenario.warnings.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+          <p className="text-xs font-semibold text-amber-800 mb-1">Caveats</p>
+          <ul className="text-xs text-amber-800 space-y-0.5 list-disc list-inside">
+            {scenario.warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {scenario?.argumentation && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowRationale(s => !s)}
+            className="text-xs text-co-blue hover:underline"
+          >
+            {showRationale ? 'Hide reviewer rationale' : 'Show reviewer rationale'}
+          </button>
+          {showRationale && (
+            <p className="mt-2 text-xs text-slate-600 leading-relaxed whitespace-pre-line">{scenario.argumentation}</p>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
